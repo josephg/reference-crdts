@@ -1,6 +1,7 @@
 import assert from 'assert/strict'
 import seed from 'seed-random'
-
+import zlib from 'zlib'
+import fs from 'fs'
 
 type Id = [agent: string, seq: number]
 type Version = Record<string, number> // Last seen seq for each agent.
@@ -8,6 +9,7 @@ type Version = Record<string, number> // Last seen seq for each agent.
 type Algorithm = {
   integrate: <T>(doc: Doc<T>, newItem: Item<T>) => void
   localInsert: <T>(doc: Doc<T>, agent: string, pos: number, content: T) => void
+  localDelete: <T>(doc: Doc<T>, agent: string, pos: number) => void // Just deletes this one item.
 }
 
 // type Id = {
@@ -32,11 +34,17 @@ type Item<T> = {
 interface Doc<T = string> {
   content: Item<T>[]
   version: Version // agent => last seen seq.
+  length: number // Number of items not deleted
 
   maxSeq: number // Only for AM.
 }
 
-const newDoc = <T>(): Doc<T> => ({content: [], version: {}, maxSeq: 0})
+const newDoc = <T>(): Doc<T> => ({
+  content: [],
+  version: {},
+  length: 0,
+  maxSeq: 0,
+})
 
 const idEq = (a: Id | null, b: Id | null): boolean => (
   a === b || (a != null && b != null && a[0] === b[0] && a[1] === b[1])
@@ -91,9 +99,7 @@ const integrateSeph = <T>(doc: Doc<T>, newItem: Item<T>) => {
         // Raw conflict. Order based on user agents.
         resetConflict()
         if (newItem.id[0] < o.id[0]) break
-        else {
-          continue
-        }
+        else continue
       } else {
         resetConflict()
         continue
@@ -106,6 +112,7 @@ const integrateSeph = <T>(doc: Doc<T>, newItem: Item<T>) => {
 
   // We've found the position. Insert here.
   doc.content.splice(destIdx, 0, newItem)
+  doc.length += 1
 }
 
 const integrateAM = <T>(doc: Doc<T>, newItem: Item<T>) => {
@@ -148,6 +155,7 @@ const integrateAM = <T>(doc: Doc<T>, newItem: Item<T>) => {
 
   // We've found the position. Insert here.
   doc.content.splice(destIdx, 0, newItem)
+  doc.length += 1
 }
 
 const getNextSeq = <T>(doc: Doc<T>, agent: string): number => {
@@ -155,26 +163,52 @@ const getNextSeq = <T>(doc: Doc<T>, agent: string): number => {
   return last == null ? 0 : last + 1
 }
 
+const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
+  let i = 0
+  // console.log('pos', pos, doc.length, doc.content.length)
+  for (; i < doc.content.length; i++) {
+    const item = doc.content[i]
+    if (item.isDeleted) continue
+    if (pos === 0) return i
+    pos--
+  }
+
+  if (pos === 0) return i
+  else throw Error('past end of the document')
+}
+
 const localInsertSeph = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+  let i = findItemAtPos(doc, pos)
   const op = makeItem(
     content,
     [agent, (doc.version[agent] ?? -1) + 1],
-    doc.content[pos - 1]?.id ?? null,
-    doc.content[pos]?.id ?? null
+    doc.content[i - 1]?.id ?? null,
+    doc.content[i]?.id ?? null
   )
   integrateSeph(doc, op)
 }
 
 const localInsertAM = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+  let i = findItemAtPos(doc, pos)
   const op = makeItem(
     content,
     [agent, (doc.version[agent] ?? -1) + 1],
-    doc.content[pos - 1]?.id ?? null,
-    doc.content[pos]?.id ?? null
+    doc.content[i - 1]?.id ?? null,
+    doc.content[i]?.id ?? null
   )
   op.seq = doc.maxSeq + 1
   integrateAM(doc, op)
 }
+
+const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
+  // This is very incomplete.
+  const item = doc.content[findItemAtPos(doc, pos)]
+  if (!item.isDeleted) {
+    item.isDeleted = true
+    doc.length -= 1
+  }
+}
+
 
 // const makeItemAt = <T>(doc: Doc<T>, pos: number, content: T, agent: string, seq?: number, originLeft?: Id | null, originRight?: Id | null): Item<T> => ({
 //   content,
@@ -194,7 +228,7 @@ const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, 
 })
 
 const getArray = <T>(doc: Doc<T>): T[] => (
-  doc.content.map(i => i.content)
+  doc.content.filter(i => !i.isDeleted).map(i => i.content)
 )
 
 const isInVersion = (id: Id | null, version: Version) => {
@@ -381,13 +415,24 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
 
     for (let i = 0; i < 1000; i++) {
       // console.log(i)
-      const pos = randInt(doc.content.length + 1)
-      const content: string = randArrItem(alphabet)
-      const agent = randArrItem(agents)
-      // console.log('insert', agent, pos, content)
-      alg.localInsert(doc, agent, pos, content)
-      expectedContent.splice(pos, 0, content)
+      if (doc.length === 0 || randBool(0.5)) {
+        // insert
+        const pos = randInt(doc.length + 1)
+        const content: string = randArrItem(alphabet)
+        const agent = randArrItem(agents)
+        // console.log('insert', agent, pos, content)
+        alg.localInsert(doc, agent, pos, content)
+        expectedContent.splice(pos, 0, content)
+      } else {
+        // Delete
+        const pos = randInt(doc.length)
+        const agent = randArrItem(agents)
+        // console.log('delete', pos)
+        alg.localDelete(doc, agent, pos)
+        expectedContent.splice(pos, 1)
+      }
 
+      assert.deepEqual(doc.length, expectedContent.length)
       assert.deepStrictEqual(getArray(doc), expectedContent)
     }
   }
@@ -412,10 +457,19 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
       for (let j = 0; j < 3; j++) {
         const doc = randDoc()
 
-        const len = doc.content.length
-        const content = ++nextItem
-        const pos = randInt(len + 1)
-        alg.localInsert(doc, doc.agent, pos, content)
+        // if (doc.length === 0 || randBool(0.5)) {
+        if (true) {
+          // insert
+          const pos = randInt(doc.length + 1)
+          const content = ++nextItem
+          // console.log('insert', agent, pos, content)
+          alg.localInsert(doc, doc.agent, pos, content)
+        } else {
+          // Delete
+          const pos = randInt(doc.length)
+          // console.log('delete', pos)
+          alg.localDelete(doc, doc.agent, pos)
+        }
       }
 
       // Pick a pair of documents and merge them
@@ -446,12 +500,48 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   // fuzzSequential()
 }
 
-runTests({
+const sephcrdt = {
   integrate: integrateSeph,
-  localInsert: localInsertSeph
-})
+  localInsert: localInsertSeph,
+  localDelete
+}
 
-runTests({
+const automerge: Algorithm = {
   integrate: integrateAM,
-  localInsert: localInsertAM
-})
+  localInsert: localInsertAM,
+  localDelete
+}
+
+runTests(sephcrdt)
+// runTests(automerge)
+
+const bench = (alg: Algorithm) => {
+  // const filename = 'sveltecomponent'
+  const filename = 'automerge-paper'
+  const {
+    startContent,
+    endContent,
+    txns
+  } = JSON.parse(zlib.gunzipSync(fs.readFileSync(`../crdt-benchmarks/${filename}.json.gz`)).toString())
+
+  const doc = newDoc()
+
+  for (const txn of txns) {
+    for (const patch of txn.patches) {
+      // Ignoring any deletes for now.
+      const [pos, delCount, inserted] = patch as [number, number, string]
+      if (inserted.length) {
+        alg.localInsert(doc, 'A', pos, inserted)
+      } else if (delCount) {
+        alg.localDelete(doc, 'A', pos)
+      }
+    }
+  }
+}
+
+// console.time('seph yjs impl')
+// bench(sephcrdt)
+// console.timeEnd('seph yjs impl')
+// console.time('automerge')
+// bench(automerge)
+// console.timeEnd('automerge')
