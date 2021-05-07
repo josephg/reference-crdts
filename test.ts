@@ -1,4 +1,4 @@
-import assert from 'assert/strict'
+import assert from 'assert'
 import seed from 'seed-random'
 import zlib from 'zlib'
 import fs from 'fs'
@@ -10,12 +10,7 @@ type Algorithm = {
   integrate: <T>(doc: Doc<T>, newItem: Item<T>) => void
   localInsert: <T>(doc: Doc<T>, agent: string, pos: number, content: T) => void
   localDelete: <T>(doc: Doc<T>, agent: string, pos: number) => void // Just deletes this one item.
-}
-
-// type Id = {
-//   agent: string,
-//   seq: number,
-// }
+} & Record<string, any>
 
 type Item<T> = {
   content: T,
@@ -59,7 +54,9 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null): number => {
   }
 }
 
-const integrateSeph = <T>(doc: Doc<T>, newItem: Item<T>) => {
+// This isn't actually yjs - I've done a few tweaks to make the CRDT
+// puzzles below work better.
+const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>) => {
   const lastSeen = doc.version[newItem.id[0]] ?? -1
   if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
   doc.version[newItem.id[0]] = newItem.id[1]
@@ -177,7 +174,7 @@ const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
   else throw Error('past end of the document')
 }
 
-const localInsertSeph = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+const localInsertYjsMod = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
   let i = findItemAtPos(doc, pos)
   const op = makeItem(
     content,
@@ -185,7 +182,7 @@ const localInsertSeph = <T>(doc: Doc<T>, agent: string, pos: number, content: T)
     doc.content[i - 1]?.id ?? null,
     doc.content[i]?.id ?? null
   )
-  integrateSeph(doc, op)
+  integrateYjsMod(doc, op)
 }
 
 const localInsertAM = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
@@ -317,6 +314,12 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   }
 
   const test = (fn: () => void) => {
+    if (alg.ignoreTests && alg.ignoreTests.includes(fn.name)) {
+      process.stdout.write(`SKIPPING ${fn.name}\n`)
+
+      return
+    }
+
     process.stdout.write(`running ${fn.name} ...`)
     try {
       fn()
@@ -332,7 +335,7 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
     alg.integrate(doc, makeItem('a', ['A', 0], null, null, 0))
     alg.integrate(doc, makeItem('b', ['A', 1], ['A', 0], null, 1))
 
-    assert.deepEqual(getArray(doc), ['a', 'b'])
+    assert.deepStrictEqual(getArray(doc), ['a', 'b'])
   }
 
   const smokeMerge = () => {
@@ -342,7 +345,7 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
 
     const doc2 = newDoc()
     mergeInto(alg, doc2, doc)
-    assert.deepEqual(getArray(doc2), ['a', 'b'])
+    assert.deepStrictEqual(getArray(doc2), ['a', 'b'])
   }
 
   const concurrentAvsB = () => {
@@ -432,7 +435,7 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
         expectedContent.splice(pos, 1)
       }
 
-      assert.deepEqual(doc.length, expectedContent.length)
+      assert.deepStrictEqual(doc.length, expectedContent.length)
       assert.deepStrictEqual(getArray(doc), expectedContent)
     }
   }
@@ -500,20 +503,23 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   // fuzzSequential()
 }
 
-const sephcrdt = {
-  integrate: integrateSeph,
-  localInsert: localInsertSeph,
+const yjsMod = {
+  integrate: integrateYjsMod,
+  localInsert: localInsertYjsMod,
   localDelete
 }
 
 const automerge: Algorithm = {
   integrate: integrateAM,
   localInsert: localInsertAM,
-  localDelete
+  localDelete,
+
+  // Automerge doesn't handle these cases as I would expect.
+  ignoreTests: ['interleavingBackward', 'withTails']
 }
 
-runTests(sephcrdt)
-// runTests(automerge)
+runTests(yjsMod)
+runTests(automerge)
 
 const bench = (alg: Algorithm) => {
   // const filename = 'sveltecomponent'
