@@ -69,7 +69,8 @@ const integrate = <T>(doc: Doc<T>, newItem: Item<T>) => {
     // Ok now we implement the punnet square of behaviour
     if (oleft < left) {
       // Top row. Insert, insert, arbitrary (insert)
-      resetConflict()
+      // I'm not sure a conflict is a problem here, but I can't generate one with my tests!
+      if (conflictStart >= 0) throw Error('Unexpected conflict')
       break
     } else if (oleft === left) {
       // Middle row.
@@ -78,15 +79,13 @@ const integrate = <T>(doc: Doc<T>, newItem: Item<T>) => {
         startConflict(i)
         continue
       } else if (oright === right) {
-        // Raw conflict. Order based on user agents
-        // resetConflict()
+        // Raw conflict. Order based on user agents.
+        resetConflict()
         if (newItem.id[0] < o.id[0]) break
         else {
-          resetConflict()
           continue
         }
       } else {
-        // I'm not sure here - should we reset conflict?
         resetConflict()
         continue
       }
@@ -103,6 +102,16 @@ const integrate = <T>(doc: Doc<T>, newItem: Item<T>) => {
 const getNextSeq = <T>(doc: Doc<T>, agent: string): number => {
   const last = doc.version[agent]
   return last == null ? 0 : last + 1
+}
+
+const localInsert = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+  const op = makeItem(
+    content,
+    [agent, (doc.version[agent] ?? -1) + 1],
+    doc.content[pos - 1]?.id ?? null,
+    doc.content[pos]?.id ?? null
+  )
+  integrate(doc, op)
 }
 
 // const makeItemAt = <T>(doc: Doc<T>, pos: number, content: T, agent: string, seq?: number, originLeft?: Id | null, originRight?: Id | null): Item<T> => ({
@@ -125,6 +134,43 @@ const getArray = <T>(doc: Doc<T>): T[] => (
   doc.content.map(i => i.content)
 )
 
+const isInVersion = (id: Id | null, version: Version) => {
+  if (id == null) return true
+  const seq = version[id[0]]
+  return seq != null && seq >= id[1]
+}
+
+const canInsertNow = <T>(op: Item<T>, doc: Doc<T>): boolean => (
+  // We need op.id to not be in doc.versions, but originLeft and originRight to be in.
+  // We're also inserting each item from each agent in sequence.
+  !isInVersion(op.id, doc.version)
+    && (op.id[1] === 0 || isInVersion([op.id[0], op.id[1] - 1], doc.version))
+    && isInVersion(op.originLeft, doc.version)
+    && isInVersion(op.originRight, doc.version)
+)
+
+// Merge all missing items from src into dest.
+const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
+  // The list of operations we need to integrate
+  const missing: (Item<T> | null)[] = src.content.filter(op => !isInVersion(op.id, dest.version))
+  let remaining = missing.length
+
+  while (remaining > 0) {
+    // Find the next item in remaining and insert it.
+    let mergedOnThisPass = 0
+
+    for (let i = 0; i < missing.length; i++) {
+      const op = missing[i]
+      if (op == null || !canInsertNow(op, dest)) continue
+      integrate(dest, op)
+      missing[i] = null
+      remaining--
+      mergedOnThisPass++
+    }
+
+    assert(mergedOnThisPass)
+  }
+}
 
 
 /// TESTS
@@ -132,13 +178,8 @@ const getArray = <T>(doc: Doc<T>): T[] => (
 ;(() => { // Separate scope for namespace protection.
   const random = seed('ax')
   const randInt = (n: number) => Math.floor(random() * n)
+  const randArrItem = (arr: any[] | string) => arr[randInt(arr.length)]
   const randBool = (weight: number = 0.5) => random() < weight
-
-  const isInVersion = (id: Id | null, version: Version) => {
-    if (id == null) return true
-    const seq = version[id[0]]
-    return seq != null && seq >= id[1]
-  }
 
   const integrateFuzzOnce = <T>(ops: Item<T>[], expectedResult: T[]): number => {
     let variants = 1
@@ -148,12 +189,7 @@ const getArray = <T>(doc: Doc<T>): T[] => (
     for (let numIntegrated = 0; numIntegrated < ops.length; numIntegrated++) {
       const candidates = []
       for (const op of ops) {
-        // We need op.id to not be in doc.versions, but originLeft and originRight to be in.
-        // We're also inserting each item from each agent in sequence.
-        if (!isInVersion(op.id, doc.version)
-            && (op.id[1] === 0 || isInVersion([op.id[0], op.id[1] - 1], doc.version))
-            && isInVersion(op.originLeft, doc.version)
-            && isInVersion(op.originRight, doc.version)) {
+        if (canInsertNow(op, doc)) {
           candidates.push(op)
 
           // console.log(op.id, doc.version, isInVersion(op.id, doc.version))
@@ -196,6 +232,16 @@ const getArray = <T>(doc: Doc<T>): T[] => (
     integrate(doc, makeItem('b', ['A', 1], ['A', 0], null))
 
     assert.deepEqual(getArray(doc), ['a', 'b'])
+  }
+
+  const smokeMerge = () => {
+    const doc = newDoc()
+    integrate(doc, makeItem('a', ['A', 0], null, null))
+    integrate(doc, makeItem('b', ['A', 1], ['A', 0], null))
+
+    const doc2 = newDoc()
+    mergeInto(doc2, doc)
+    assert.deepEqual(getArray(doc2), ['a', 'b'])
   }
 
   const concurrentAvsB = () => {
@@ -260,13 +306,72 @@ const getArray = <T>(doc: Doc<T>): T[] => (
     integrateFuzz([a, b, c, d], ['a', 'd', 'b', 'c'])
   }
 
+  const fuzzSequential = () => {
+    const doc = newDoc()
+    let expectedContent: string[] = []
+    const alphabet = 'xyz123'
+    const agents = 'ABCDE'
+
+    for (let i = 0; i < 1000; i++) {
+      const pos = randInt(doc.content.length + 1)
+      const content: string = randArrItem(alphabet)
+      const agent = randArrItem(agents)
+      localInsert(doc, agent, pos, content)
+      expectedContent.splice(pos, 0, content)
+
+      assert.deepStrictEqual(getArray(doc), expectedContent)
+    }
+  }
+
+  const fuzzMultidoc = () => {
+    const agents = ['A', 'B', 'C']
+    const docs = new Array(3).fill(null).map((_, i) => {
+      const doc: Doc<number> & {agent: string} = newDoc() as any
+      doc.agent = agents[i]
+      return doc
+    })
+
+    const randDoc = () => docs[randInt(docs.length)]
+
+    let nextItem = 0
+    // console.log(docs)
+    for (let i = 0; i < 1000; i++) {
+      // console.log(i)
+      if (i % 100 === 0) console.log(i)
+
+      // Generate some random operations
+      for (let j = 0; j < 3; j++) {
+        const doc = randDoc()
+
+        const len = doc.content.length
+        const content = ++nextItem
+        const pos = randInt(len + 1)
+        localInsert(doc, doc.agent, pos, content)
+      }
+
+      // Pick a pair of documents and merge them
+      const a = randDoc()
+      const b = randDoc()
+      if (a !== b) {
+        // console.log('merging', a.id, b.id, a.content, b.content)
+        mergeInto(a, b)
+        mergeInto(b, a)
+        assert.deepStrictEqual(getArray(a), getArray(b))
+      }
+    }
+  }
+
+
   const tests = [
     smoke,
+    smokeMerge,
     concurrentAvsB,
     interleavingForward,
     interleavingBackward,
     withTails,
     localVsConcurrent,
+    fuzzSequential,
+    fuzzMultidoc
   ]
   tests.forEach(test)
 
