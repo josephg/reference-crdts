@@ -174,7 +174,16 @@ const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
   else throw Error('past end of the document')
 }
 
-const localInsertYjsMod = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq?: number): Item<T> => ({
+  content,
+  id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
+  isDeleted: false,
+  originLeft,
+  originRight,
+  seq: amSeq ?? -1, // Only for AM.
+})
+
+const makeItemAt = <T>(doc: Doc<T>, agent: string, pos: number, content: T): Item<T> => {
   let i = findItemAtPos(doc, pos)
   const op = makeItem(
     content,
@@ -182,19 +191,16 @@ const localInsertYjsMod = <T>(doc: Doc<T>, agent: string, pos: number, content: 
     doc.content[i - 1]?.id ?? null,
     doc.content[i]?.id ?? null
   )
-  integrateYjsMod(doc, op)
+  op.seq = doc.maxSeq + 1 // Only for AM.
+  return op
+}
+
+const localInsertYjsMod = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+  integrateYjsMod(doc, makeItemAt(doc, agent, pos, content))
 }
 
 const localInsertAM = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
-  let i = findItemAtPos(doc, pos)
-  const op = makeItem(
-    content,
-    [agent, (doc.version[agent] ?? -1) + 1],
-    doc.content[i - 1]?.id ?? null,
-    doc.content[i]?.id ?? null
-  )
-  op.seq = doc.maxSeq + 1
-  integrateAM(doc, op)
+  integrateAM(doc, makeItemAt(doc, agent, pos, content))
 }
 
 const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
@@ -205,24 +211,6 @@ const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
     doc.length -= 1
   }
 }
-
-
-// const makeItemAt = <T>(doc: Doc<T>, pos: number, content: T, agent: string, seq?: number, originLeft?: Id | null, originRight?: Id | null): Item<T> => ({
-//   content,
-//   id: [agent, seq ?? getNextSeq(doc, agent)],
-//   isDeleted: false,
-//   originLeft: originLeft ?? (pos === 0 ? null : doc.content[pos - 1].id),
-//   originRight: originRight ?? (pos >= doc.content.length ? null : doc.content[pos].id)
-// })
-
-const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq?: number): Item<T> => ({
-  content,
-  id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
-  isDeleted: false,
-  originLeft,
-  originRight,
-  seq: amSeq ?? -1, // Only for AM.
-})
 
 const getArray = <T>(doc: Doc<T>): T[] => (
   doc.content.filter(i => !i.isDeleted).map(i => i.content)
