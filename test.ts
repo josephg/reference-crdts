@@ -8,9 +8,8 @@ type Version = Record<string, number> // Last seen seq for each agent.
 
 type Algorithm = {
   integrate: <T>(doc: Doc<T>, newItem: Item<T>) => void
-  localInsert: <T>(doc: Doc<T>, agent: string, pos: number, content: T) => void
-  localDelete: <T>(doc: Doc<T>, agent: string, pos: number) => void // Just deletes this one item.
-} & Record<string, any>
+  ignoreTests?: string[]
+}// & Record<string, any>
 
 type Item<T> = {
   content: T,
@@ -195,12 +194,8 @@ const makeItemAt = <T>(doc: Doc<T>, agent: string, pos: number, content: T): Ite
   return op
 }
 
-const localInsertYjsMod = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
-  integrateYjsMod(doc, makeItemAt(doc, agent, pos, content))
-}
-
-const localInsertAM = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
-  integrateAM(doc, makeItemAt(doc, agent, pos, content))
+const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
+  alg.integrate(doc, makeItemAt(doc, agent, pos, content))
 }
 
 const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
@@ -412,14 +407,14 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
         const content: string = randArrItem(alphabet)
         const agent = randArrItem(agents)
         // console.log('insert', agent, pos, content)
-        alg.localInsert(doc, agent, pos, content)
+        localInsert(alg, doc, agent, pos, content)
         expectedContent.splice(pos, 0, content)
       } else {
         // Delete
         const pos = randInt(doc.length)
         const agent = randArrItem(agents)
         // console.log('delete', pos)
-        alg.localDelete(doc, agent, pos)
+        localDelete(doc, agent, pos)
         expectedContent.splice(pos, 1)
       }
 
@@ -454,12 +449,12 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
           const pos = randInt(doc.length + 1)
           const content = ++nextItem
           // console.log('insert', agent, pos, content)
-          alg.localInsert(doc, doc.agent, pos, content)
+          localInsert(alg, doc, doc.agent, pos, content)
         } else {
           // Delete
           const pos = randInt(doc.length)
           // console.log('delete', pos)
-          alg.localDelete(doc, doc.agent, pos)
+          localDelete(doc, doc.agent, pos)
         }
       }
 
@@ -491,16 +486,12 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   // fuzzSequential()
 }
 
-const yjsMod = {
-  integrate: integrateYjsMod,
-  localInsert: localInsertYjsMod,
-  localDelete
+const yjsMod: Algorithm = {
+  integrate: integrateYjsMod
 }
 
 const automerge: Algorithm = {
   integrate: integrateAM,
-  localInsert: localInsertAM,
-  localDelete,
 
   // Automerge doesn't handle these cases as I would expect.
   ignoreTests: ['interleavingBackward', 'withTails']
@@ -525,9 +516,9 @@ const bench = (alg: Algorithm) => {
       // Ignoring any deletes for now.
       const [pos, delCount, inserted] = patch as [number, number, string]
       if (inserted.length) {
-        alg.localInsert(doc, 'A', pos, inserted)
+        localInsert(alg, doc, 'A', pos, inserted)
       } else if (delCount) {
-        alg.localDelete(doc, 'A', pos)
+        localDelete(doc, 'A', pos)
       }
     }
   }
