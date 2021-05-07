@@ -5,6 +5,11 @@ import seed from 'seed-random'
 type Id = [agent: string, seq: number]
 type Version = Record<string, number> // Last seen seq for each agent.
 
+type Algorithm = {
+  integrate: <T>(doc: Doc<T>, newItem: Item<T>) => void
+  localInsert: <T>(doc: Doc<T>, agent: string, pos: number, content: T) => void
+}
+
 // type Id = {
 //   agent: string,
 //   seq: number,
@@ -17,7 +22,9 @@ type Item<T> = {
   // Left and right implicit in document list.
   // null represents document's root / end.
   originLeft: Id | null,
-  originRight: Id | null,
+  originRight: Id | null, // Only for yjs, seph
+
+  seq: number, // only for automerge. > all prev sequence numbers.
 
   isDeleted: boolean,
 }
@@ -25,9 +32,11 @@ type Item<T> = {
 interface Doc<T = string> {
   content: Item<T>[]
   version: Version // agent => last seen seq.
+
+  maxSeq: number // Only for AM.
 }
 
-const newDoc = <T>(): Doc<T> => ({content: [], version: {}})
+const newDoc = <T>(): Doc<T> => ({content: [], version: {}, maxSeq: 0})
 
 const idEq = (a: Id | null, b: Id | null): boolean => (
   a === b || (a != null && b != null && a[0] === b[0] && a[1] === b[1])
@@ -42,7 +51,7 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null): number => {
   }
 }
 
-const integrate = <T>(doc: Doc<T>, newItem: Item<T>) => {
+const integrateSeph = <T>(doc: Doc<T>, newItem: Item<T>) => {
   const lastSeen = doc.version[newItem.id[0]] ?? -1
   if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
   doc.version[newItem.id[0]] = newItem.id[1]
@@ -99,19 +108,72 @@ const integrate = <T>(doc: Doc<T>, newItem: Item<T>) => {
   doc.content.splice(destIdx, 0, newItem)
 }
 
+const integrateAM = <T>(doc: Doc<T>, newItem: Item<T>) => {
+  const {id} = newItem
+  assert(newItem.seq >= 0)
+
+  const lastSeen = doc.version[id[0]] ?? -1
+  if (id[1] !== lastSeen + 1) throw Error('Operations out of order')
+  doc.version[id[0]] = id[1]
+
+  let parent = findItem(doc, newItem.originLeft)
+  let destIdx = parent + 1
+
+  // Scan for the insert location. Stop if we reach the end of the document
+  for (; destIdx < doc.content.length; destIdx++) {
+    let o = doc.content[destIdx]
+    let oparent = findItem(doc, o.originLeft)
+
+    // Ok now we implement the punnet square of behaviour
+    if (oparent < parent) {
+      // We've gotten to the end of the list of children. Stop here.
+      break
+    } else if (oparent === parent) {
+      if (id[0] === o.id[0]) {
+        // This user is prepending an item at this location.
+        assert(id[1] > o.id[1])
+        break
+      }
+
+      // Concurrent items from different useragents are sorted first by seq then agent.
+      if (newItem.seq > o.seq
+        || newItem.seq === o.seq && id[0] < o.id[0]) break
+    } else {
+      // Skip child
+      continue
+    }
+  }
+
+  if (newItem.seq > doc.maxSeq) doc.maxSeq = newItem.seq
+
+  // We've found the position. Insert here.
+  doc.content.splice(destIdx, 0, newItem)
+}
+
 const getNextSeq = <T>(doc: Doc<T>, agent: string): number => {
   const last = doc.version[agent]
   return last == null ? 0 : last + 1
 }
 
-const localInsert = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+const localInsertSeph = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
   const op = makeItem(
     content,
     [agent, (doc.version[agent] ?? -1) + 1],
     doc.content[pos - 1]?.id ?? null,
     doc.content[pos]?.id ?? null
   )
-  integrate(doc, op)
+  integrateSeph(doc, op)
+}
+
+const localInsertAM = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => {
+  const op = makeItem(
+    content,
+    [agent, (doc.version[agent] ?? -1) + 1],
+    doc.content[pos - 1]?.id ?? null,
+    doc.content[pos]?.id ?? null
+  )
+  op.seq = doc.maxSeq + 1
+  integrateAM(doc, op)
 }
 
 // const makeItemAt = <T>(doc: Doc<T>, pos: number, content: T, agent: string, seq?: number, originLeft?: Id | null, originRight?: Id | null): Item<T> => ({
@@ -122,12 +184,13 @@ const localInsert = <T>(doc: Doc<T>, agent: string, pos: number, content: T) => 
 //   originRight: originRight ?? (pos >= doc.content.length ? null : doc.content[pos].id)
 // })
 
-const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null): Item<T> => ({
+const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq?: number): Item<T> => ({
   content,
   id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
   isDeleted: false,
   originLeft,
-  originRight
+  originRight,
+  seq: amSeq ?? -1, // Only for AM.
 })
 
 const getArray = <T>(doc: Doc<T>): T[] => (
@@ -150,7 +213,7 @@ const canInsertNow = <T>(op: Item<T>, doc: Doc<T>): boolean => (
 )
 
 // Merge all missing items from src into dest.
-const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
+const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) => {
   // The list of operations we need to integrate
   const missing: (Item<T> | null)[] = src.content.filter(op => !isInVersion(op.id, dest.version))
   let remaining = missing.length
@@ -162,7 +225,7 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
     for (let i = 0; i < missing.length; i++) {
       const op = missing[i]
       if (op == null || !canInsertNow(op, dest)) continue
-      integrate(dest, op)
+      algorithm.integrate(dest, op)
       missing[i] = null
       remaining--
       mergedOnThisPass++
@@ -172,10 +235,9 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
   }
 }
 
-
 /// TESTS
 
-;(() => { // Separate scope for namespace protection.
+const runTests = (alg: Algorithm) => { // Separate scope for namespace protection.
   const random = seed('ax')
   const randInt = (n: number) => Math.floor(random() * n)
   const randArrItem = (arr: any[] | string) => arr[randInt(arr.length)]
@@ -202,7 +264,7 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
       // Pick one
       const op = candidates[randInt(candidates.length)]
       // console.log(op, doc.version)
-      integrate(doc, op)
+      alg.integrate(doc, op)
     }
 
     assert.deepStrictEqual(getArray(doc), expectedResult)
@@ -222,43 +284,48 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
 
   const test = (fn: () => void) => {
     process.stdout.write(`running ${fn.name} ...`)
-    fn()
-    process.stdout.write(`PASS\n`)
+    try {
+      fn()
+      process.stdout.write(`PASS\n`)
+    } catch (e) {
+      process.stdout.write(`FAIL:\n`)
+      console.log(e.stack)
+    }
   }
 
   const smoke = () => {
     const doc = newDoc()
-    integrate(doc, makeItem('a', ['A', 0], null, null))
-    integrate(doc, makeItem('b', ['A', 1], ['A', 0], null))
+    alg.integrate(doc, makeItem('a', ['A', 0], null, null, 0))
+    alg.integrate(doc, makeItem('b', ['A', 1], ['A', 0], null, 1))
 
     assert.deepEqual(getArray(doc), ['a', 'b'])
   }
 
   const smokeMerge = () => {
     const doc = newDoc()
-    integrate(doc, makeItem('a', ['A', 0], null, null))
-    integrate(doc, makeItem('b', ['A', 1], ['A', 0], null))
+    alg.integrate(doc, makeItem('a', ['A', 0], null, null, 0))
+    alg.integrate(doc, makeItem('b', ['A', 1], ['A', 0], null, 1))
 
     const doc2 = newDoc()
-    mergeInto(doc2, doc)
+    mergeInto(alg, doc2, doc)
     assert.deepEqual(getArray(doc2), ['a', 'b'])
   }
 
   const concurrentAvsB = () => {
-    const a = makeItem('a', 'A', null, null)
-    const b = makeItem('b', 'B', null, null)
+    const a = makeItem('a', 'A', null, null, 0)
+    const b = makeItem('b', 'B', null, null, 0)
     integrateFuzz([a, b], ['a', 'b'])
   }
 
   const interleavingForward = () => {
     const ops = [
-      makeItem('a', ['A', 0], null, null),
-      makeItem('a', ['A', 1], ['A', 0], null),
-      makeItem('a', ['A', 2], ['A', 1], null),
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a', ['A', 1], ['A', 0], null, 1),
+      makeItem('a', ['A', 2], ['A', 1], null, 2),
 
-      makeItem('b', ['B', 0], null, null),
-      makeItem('b', ['B', 1], ['B', 0], null),
-      makeItem('b', ['B', 2], ['B', 1], null),
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b', ['B', 1], ['B', 0], null, 1),
+      makeItem('b', ['B', 2], ['B', 1], null, 2),
     ]
 
     integrateFuzz(ops, ['a', 'a', 'a', 'b', 'b', 'b'])
@@ -266,13 +333,13 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
 
   const interleavingBackward = () => {
     const ops = [
-      makeItem('a', ['A', 0], null, null),
-      makeItem('a', ['A', 1], null, ['A', 0]),
-      makeItem('a', ['A', 2], null, ['A', 1]),
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a', ['A', 1], null, ['A', 0], 1),
+      makeItem('a', ['A', 2], null, ['A', 1], 2),
 
-      makeItem('b', ['B', 0], null, null),
-      makeItem('b', ['B', 1], null, ['B', 0]),
-      makeItem('b', ['B', 2], null, ['B', 1]),
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b', ['B', 1], null, ['B', 0], 1),
+      makeItem('b', ['B', 2], null, ['B', 1], 2),
     ]
 
     integrateFuzz(ops, ['a', 'a', 'a', 'b', 'b', 'b'])
@@ -280,13 +347,13 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
 
   const withTails = () => {
     const ops = [
-      makeItem('a', ['A', 0], null, null),
-      makeItem('a0', ['A', 1], null, ['A', 0]), // left
-      makeItem('a1', ['A', 2], ['A', 0], null), // right
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a0', ['A', 1], null, ['A', 0], 1), // left
+      makeItem('a1', ['A', 2], ['A', 0], null, 2), // right
 
-      makeItem('b', ['B', 0], null, null),
-      makeItem('b0', ['B', 1], null, ['B', 0]), // left
-      makeItem('b1', ['B', 2], ['B', 0], null), // right
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b0', ['B', 1], null, ['B', 0], 1), // left
+      makeItem('b1', ['B', 2], ['B', 0], null, 2), // right
     ]
 
     integrateFuzz(ops, ['a0', 'a', 'a1', 'b0', 'b', 'b1'])
@@ -295,12 +362,12 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
   const localVsConcurrent = () => {
     // Check what happens when a top level concurrent change interacts
     // with a more localised change. (C vs D)
-    const a = makeItem('a', 'A', null, null)
-    const c = makeItem('c', 'C', null, null)
+    const a = makeItem('a', 'A', null, null, 0)
+    const c = makeItem('c', 'C', null, null, 0)
 
     // How do these two get ordered?
-    const b = makeItem('b', 'B', null, null) // Concurrent with a and c
-    const d = makeItem('d', 'D', ['A', 0], ['C', 0]) // in between a and c
+    const b = makeItem('b', 'B', null, null, 0) // Concurrent with a and c
+    const d = makeItem('d', 'D', ['A', 0], ['C', 0], 1) // in between a and c
 
     // [a, b, d, c] would also be acceptable.
     integrateFuzz([a, b, c, d], ['a', 'd', 'b', 'c'])
@@ -313,10 +380,12 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
     const agents = 'ABCDE'
 
     for (let i = 0; i < 1000; i++) {
+      // console.log(i)
       const pos = randInt(doc.content.length + 1)
       const content: string = randArrItem(alphabet)
       const agent = randArrItem(agents)
-      localInsert(doc, agent, pos, content)
+      // console.log('insert', agent, pos, content)
+      alg.localInsert(doc, agent, pos, content)
       expectedContent.splice(pos, 0, content)
 
       assert.deepStrictEqual(getArray(doc), expectedContent)
@@ -346,7 +415,7 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
         const len = doc.content.length
         const content = ++nextItem
         const pos = randInt(len + 1)
-        localInsert(doc, doc.agent, pos, content)
+        alg.localInsert(doc, doc.agent, pos, content)
       }
 
       // Pick a pair of documents and merge them
@@ -354,8 +423,8 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
       const b = randDoc()
       if (a !== b) {
         // console.log('merging', a.id, b.id, a.content, b.content)
-        mergeInto(a, b)
-        mergeInto(b, a)
+        mergeInto(alg, a, b)
+        mergeInto(alg, b, a)
         assert.deepStrictEqual(getArray(a), getArray(b))
       }
     }
@@ -374,5 +443,15 @@ const mergeInto = <T>(dest: Doc<T>, src: Doc<T>) => {
     fuzzMultidoc
   ]
   tests.forEach(test)
+  // fuzzSequential()
+}
 
-})()
+runTests({
+  integrate: integrateSeph,
+  localInsert: localInsertSeph
+})
+
+runTests({
+  integrate: integrateAM,
+  localInsert: localInsertAM
+})
