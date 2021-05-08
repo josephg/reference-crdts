@@ -1,6 +1,6 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localInsert, localDelete, Doc, yjsMod, automerge} from './crdts'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localInsert, localDelete, Doc, yjsMod, automerge, yjsActual} from './crdts'
 
 /// TESTS
 
@@ -241,6 +241,7 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
 }
 
 runTests(yjsMod)
+runTests(yjsActual)
 runTests(automerge)
 
 // console.log('hits', hits, 'misses', misses)

@@ -72,8 +72,8 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null, idx_hint: number = -1): num
   }
 }
 
-// This isn't actually yjs - I've done a few tweaks to make the CRDT
-// puzzles below work better.
+// This is a slight modification of yjs with a few tweaks to make some
+// of the CRDT puzzles resolve better.
 const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const lastSeen = doc.version[newItem.id[0]] ?? -1
   if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
@@ -117,6 +117,70 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
         resetConflict()
         continue
       }
+    } else {
+      // Bottom row. Arbitrary (skip), skip, skip
+      continue
+    }
+  }
+
+  // We've found the position. Insert here.
+  doc.content.splice(destIdx, 0, newItem)
+  doc.length += 1
+}
+
+const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+  const lastSeen = doc.version[newItem.id[0]] ?? -1
+  if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
+  doc.version[newItem.id[0]] = newItem.id[1]
+
+  let left = findItem(doc, newItem.originLeft, idx_hint - 1)
+  let destIdx = left + 1
+  let right = newItem.originRight == null ? doc.content.length : findItem(doc, newItem.originRight, idx_hint)
+  let conflictStart = -1
+
+  const startConflict = (i: number) => conflictStart = i
+  const resetConflict = () => conflictStart = -1
+
+  for (let i = destIdx; ; i++) {
+    // Inserting at the end of the document. Just insert.
+    if (conflictStart === -1) destIdx = i
+    if (i === doc.content.length) break
+    if (i === right) break // No ambiguity / concurrency. Insert here.
+
+    let o = doc.content[i]
+
+    let oleft = findItem(doc, o.originLeft, idx_hint - 1)
+    let oright = o.originRight == null ? doc.content.length : findItem(doc, o.originRight, idx_hint)
+
+    // Ok now we implement the punnet square of behaviour
+    if (oleft < left) {
+      // Top row. Insert, insert, arbitrary (insert)
+      break
+    } else if (oleft === left) {
+      // Middle row.
+      if (newItem.id[0] > o.id[0]) {
+        resetConflict()
+        continue
+      } else if (oright === right) {
+        break
+      } else {
+        startConflict(i)
+        continue
+      }
+
+      // if (oright < right) {
+      //   // This is tricky. We're looking at an item we *might* insert after - but we can't tell yet!
+      //   startConflict(i)
+      //   continue
+      // } else if (oright === right) {
+      //   // Raw conflict. Order based on user agents.
+      //   resetConflict()
+      //   if (newItem.id[0] < o.id[0]) break
+      //   else continue
+      // } else {
+      //   resetConflict()
+      //   continue
+      // }
     } else {
       // Bottom row. Arbitrary (skip), skip, skip
       continue
@@ -271,6 +335,10 @@ export const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) =>
 
 export const yjsMod: Algorithm = {
   integrate: integrateYjsMod
+}
+
+export const yjsActual: Algorithm = {
+  integrate: integrateYjs
 }
 
 export const automerge: Algorithm = {
