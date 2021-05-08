@@ -9,7 +9,7 @@ type Version = Record<string, number> // Last seen seq for each agent.
 type Algorithm = {
   integrate: <T>(doc: Doc<T>, newItem: Item<T>) => void
   ignoreTests?: string[]
-}// & Record<string, any>
+}
 
 type Item<T> = {
   content: T,
@@ -182,20 +182,16 @@ const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, 
   seq: amSeq ?? -1, // Only for AM.
 })
 
-const makeItemAt = <T>(doc: Doc<T>, agent: string, pos: number, content: T): Item<T> => {
-  let i = findItemAtPos(doc, pos)
-  const op = makeItem(
-    content,
-    [agent, (doc.version[agent] ?? -1) + 1],
-    doc.content[i - 1]?.id ?? null,
-    doc.content[i]?.id ?? null
-  )
-  op.seq = doc.maxSeq + 1 // Only for AM.
-  return op
-}
-
 const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
-  alg.integrate(doc, makeItemAt(doc, agent, pos, content))
+  let i = findItemAtPos(doc, pos)
+  alg.integrate(doc, {
+    content,
+    id: [agent, (doc.version[agent] ?? -1) + 1],
+    isDeleted: false,
+    originLeft: doc.content[i - 1]?.id ?? null,
+    originRight: doc.content[i]?.id ?? null, // Only for yjs
+    seq: doc.maxSeq + 1, // Only for AM.
+  })
 }
 
 const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
@@ -227,6 +223,7 @@ const canInsertNow = <T>(op: Item<T>, doc: Doc<T>): boolean => (
 )
 
 // Merge all missing items from src into dest.
+// NOTE: This currently does not support moving deletes!
 const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) => {
   // The list of operations we need to integrate
   const missing: (Item<T> | null)[] = src.content.filter(op => !isInVersion(op.id, dest.version))
@@ -267,10 +264,9 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
       for (const op of ops) {
         if (canInsertNow(op, doc)) {
           candidates.push(op)
-
-          // console.log(op.id, doc.version, isInVersion(op.id, doc.version))
         }
       }
+
       assert(candidates.length > 0)
       variants *= candidates.length
       // console.log('doc version', doc.version, 'candidates', candidates)
@@ -299,17 +295,15 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   const test = (fn: () => void) => {
     if (alg.ignoreTests && alg.ignoreTests.includes(fn.name)) {
       process.stdout.write(`SKIPPING ${fn.name}\n`)
-
-      return
-    }
-
-    process.stdout.write(`running ${fn.name} ...`)
-    try {
-      fn()
-      process.stdout.write(`PASS\n`)
-    } catch (e) {
-      process.stdout.write(`FAIL:\n`)
-      console.log(e.stack)
+    } else {
+      process.stdout.write(`running ${fn.name} ...`)
+      try {
+        fn()
+        process.stdout.write(`PASS\n`)
+      } catch (e) {
+        process.stdout.write(`FAIL:\n`)
+        console.log(e.stack)
+      }
     }
   }
 
@@ -451,7 +445,7 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
           // console.log('insert', agent, pos, content)
           localInsert(alg, doc, doc.agent, pos, content)
         } else {
-          // Delete
+          // Delete - disabled for now because mergeInto doesn't support deletes
           const pos = randInt(doc.length)
           // console.log('delete', pos)
           localDelete(doc, doc.agent, pos)
@@ -509,6 +503,7 @@ const bench = (alg: Algorithm) => {
     txns
   } = JSON.parse(zlib.gunzipSync(fs.readFileSync(`../crdt-benchmarks/${filename}.json.gz`)).toString())
 
+  console.time(filename)
   const doc = newDoc()
 
   for (const txn of txns) {
@@ -522,11 +517,12 @@ const bench = (alg: Algorithm) => {
       }
     }
   }
+  console.timeEnd(filename)
 }
 
 // console.time('seph yjs impl')
 // bench(sephcrdt)
 // console.timeEnd('seph yjs impl')
 // console.time('automerge')
-// bench(automerge)
+bench(automerge)
 // console.timeEnd('automerge')
