@@ -37,6 +37,8 @@ export const newDoc = <T>(): Doc<T> => ({
   maxSeq: 0,
 })
 
+// **** Common code and helpers
+
 const idEq = (a: Id | null, b: Id | null): boolean => (
   a === b || (a != null && b != null && a[0] === b[0] && a[1] === b[1])
 )
@@ -71,6 +73,102 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null, idx_hint: number = -1): num
     return idx
   }
 }
+
+// const getNextSeq = <T>(doc: Doc<T>, agent: string): number => {
+//   const last = doc.version[agent]
+//   return last == null ? 0 : last + 1
+// }
+
+const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
+  let i = 0
+  // console.log('pos', pos, doc.length, doc.content.length)
+  for (; i < doc.content.length; i++) {
+    const item = doc.content[i]
+    if (item.isDeleted) continue
+    if (pos === 0) return i
+    pos--
+  }
+
+  if (pos === 0) return i
+  else throw Error('past end of the document')
+}
+
+export const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq?: number): Item<T> => ({
+  content,
+  id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
+  isDeleted: false,
+  originLeft,
+  originRight,
+  seq: amSeq ?? -1, // Only for AM.
+})
+
+export const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
+  let i = findItemAtPos(doc, pos)
+  alg.integrate(doc, {
+    content,
+    id: [agent, (doc.version[agent] ?? -1) + 1],
+    isDeleted: false,
+    originLeft: doc.content[i - 1]?.id ?? null,
+    originRight: doc.content[i]?.id ?? null, // Only for yjs
+    seq: doc.maxSeq + 1, // Only for AM.
+  }, i)
+}
+
+export const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
+  // This is very incomplete.
+  const item = doc.content[findItemAtPos(doc, pos)]
+  if (!item.isDeleted) {
+    item.isDeleted = true
+    doc.length -= 1
+  }
+}
+
+export const getArray = <T>(doc: Doc<T>): T[] => (
+  doc.content.filter(i => !i.isDeleted).map(i => i.content)
+)
+
+export const isInVersion = (id: Id | null, version: Version) => {
+  if (id == null) return true
+  const seq = version[id[0]]
+  return seq != null && seq >= id[1]
+}
+
+export const canInsertNow = <T>(op: Item<T>, doc: Doc<T>): boolean => (
+  // We need op.id to not be in doc.versions, but originLeft and originRight to be in.
+  // We're also inserting each item from each agent in sequence.
+  !isInVersion(op.id, doc.version)
+    && (op.id[1] === 0 || isInVersion([op.id[0], op.id[1] - 1], doc.version))
+    && isInVersion(op.originLeft, doc.version)
+    && isInVersion(op.originRight, doc.version)
+)
+
+// Merge all missing items from src into dest.
+// NOTE: This currently does not support moving deletes!
+export const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) => {
+  // The list of operations we need to integrate
+  const missing: (Item<T> | null)[] = src.content.filter(op => !isInVersion(op.id, dest.version))
+  let remaining = missing.length
+
+  while (remaining > 0) {
+    // Find the next item in remaining and insert it.
+    let mergedOnThisPass = 0
+
+    for (let i = 0; i < missing.length; i++) {
+      const op = missing[i]
+      if (op == null || !canInsertNow(op, dest)) continue
+      algorithm.integrate(dest, op)
+      missing[i] = null
+      remaining--
+      mergedOnThisPass++
+    }
+
+    assert(mergedOnThisPass)
+  }
+}
+
+
+// *** Per algorithm integration functions. Note each CRDT will only use
+// one of these integration methods depending on the desired semantics.
 
 // This is a slight modification of yjs with a few tweaks to make some
 // of the CRDT puzzles resolve better.
@@ -225,99 +323,6 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
   doc.content.splice(destIdx, 0, newItem)
   doc.length += 1
 }
-
-// const getNextSeq = <T>(doc: Doc<T>, agent: string): number => {
-//   const last = doc.version[agent]
-//   return last == null ? 0 : last + 1
-// }
-
-const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
-  let i = 0
-  // console.log('pos', pos, doc.length, doc.content.length)
-  for (; i < doc.content.length; i++) {
-    const item = doc.content[i]
-    if (item.isDeleted) continue
-    if (pos === 0) return i
-    pos--
-  }
-
-  if (pos === 0) return i
-  else throw Error('past end of the document')
-}
-
-export const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq?: number): Item<T> => ({
-  content,
-  id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
-  isDeleted: false,
-  originLeft,
-  originRight,
-  seq: amSeq ?? -1, // Only for AM.
-})
-
-export const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
-  let i = findItemAtPos(doc, pos)
-  alg.integrate(doc, {
-    content,
-    id: [agent, (doc.version[agent] ?? -1) + 1],
-    isDeleted: false,
-    originLeft: doc.content[i - 1]?.id ?? null,
-    originRight: doc.content[i]?.id ?? null, // Only for yjs
-    seq: doc.maxSeq + 1, // Only for AM.
-  }, i)
-}
-
-export const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void => {
-  // This is very incomplete.
-  const item = doc.content[findItemAtPos(doc, pos)]
-  if (!item.isDeleted) {
-    item.isDeleted = true
-    doc.length -= 1
-  }
-}
-
-export const getArray = <T>(doc: Doc<T>): T[] => (
-  doc.content.filter(i => !i.isDeleted).map(i => i.content)
-)
-
-export const isInVersion = (id: Id | null, version: Version) => {
-  if (id == null) return true
-  const seq = version[id[0]]
-  return seq != null && seq >= id[1]
-}
-
-export const canInsertNow = <T>(op: Item<T>, doc: Doc<T>): boolean => (
-  // We need op.id to not be in doc.versions, but originLeft and originRight to be in.
-  // We're also inserting each item from each agent in sequence.
-  !isInVersion(op.id, doc.version)
-    && (op.id[1] === 0 || isInVersion([op.id[0], op.id[1] - 1], doc.version))
-    && isInVersion(op.originLeft, doc.version)
-    && isInVersion(op.originRight, doc.version)
-)
-
-// Merge all missing items from src into dest.
-// NOTE: This currently does not support moving deletes!
-export const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) => {
-  // The list of operations we need to integrate
-  const missing: (Item<T> | null)[] = src.content.filter(op => !isInVersion(op.id, dest.version))
-  let remaining = missing.length
-
-  while (remaining > 0) {
-    // Find the next item in remaining and insert it.
-    let mergedOnThisPass = 0
-
-    for (let i = 0; i < missing.length; i++) {
-      const op = missing[i]
-      if (op == null || !canInsertNow(op, dest)) continue
-      algorithm.integrate(dest, op)
-      missing[i] = null
-      remaining--
-      mergedOnThisPass++
-    }
-
-    assert(mergedOnThisPass)
-  }
-}
-
 
 export const yjsMod: Algorithm = {
   integrate: integrateYjsMod
