@@ -167,20 +167,6 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
         startConflict(i)
         continue
       }
-
-      // if (oright < right) {
-      //   // This is tricky. We're looking at an item we *might* insert after - but we can't tell yet!
-      //   startConflict(i)
-      //   continue
-      // } else if (oright === right) {
-      //   // Raw conflict. Order based on user agents.
-      //   resetConflict()
-      //   if (newItem.id[0] < o.id[0]) break
-      //   else continue
-      // } else {
-      //   resetConflict()
-      //   continue
-      // }
     } else {
       // Bottom row. Arbitrary (skip), skip, skip
       continue
@@ -192,7 +178,7 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
   doc.length += 1
 }
 
-const integrateAM = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const {id} = newItem
   assert(newItem.seq >= 0)
 
@@ -342,7 +328,7 @@ export const yjsActual: Algorithm = {
 }
 
 export const automerge: Algorithm = {
-  integrate: integrateAM,
+  integrate: integrateAutomerge,
 
   // Automerge doesn't handle these cases as I would expect.
   ignoreTests: ['interleavingBackward', 'withTails']
