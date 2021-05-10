@@ -58,13 +58,13 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null, idx_hint: number = -1): num
         return idx_hint
       }
       // Try nearby.
-      const RANGE = 10
-      for (let i = idx_hint < RANGE ? 0 : idx_hint - RANGE; i < doc.content.length && i < idx_hint + RANGE; i++) {
-        if (idEq(doc.content[i].id, needle)) {
-          hits++
-          return i
-        }
-      }
+      // const RANGE = 10
+      // for (let i = idx_hint < RANGE ? 0 : idx_hint - RANGE; i < doc.content.length && i < idx_hint + RANGE; i++) {
+      //   if (idEq(doc.content[i].id, needle)) {
+      //     hits++
+      //     return i
+      //   }
+      // }
     }
 
     misses++
@@ -291,6 +291,13 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
   for (; destIdx < doc.content.length; destIdx++) {
     let o = doc.content[destIdx]
 
+    // This is an unnecessary optimization (I couldn't help myself). It
+    // doubles the speed when running the local editing traces by
+    // avoiding calls to findItem() below. When newItem.seq > o.seq
+    // we're guaranteed to end up falling into a branch that calls
+    // break;.
+    if (newItem.seq > o.seq) break
+
     // Optimization: This call halves the speed of this automerge
     // implementation. Its only needed to see if o.originLeft has been
     // visited in this loop, which we could calculate much more
@@ -337,4 +344,8 @@ export const automerge: Algorithm = {
 
   // Automerge doesn't handle these cases as I would expect.
   ignoreTests: ['interleavingBackward', 'withTails']
+}
+
+export const printDebugStats = () => {
+  console.log('hits', hits, 'misses', misses)
 }

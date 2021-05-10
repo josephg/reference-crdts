@@ -1,8 +1,9 @@
 import zlib from 'zlib'
 import fs from 'fs'
-import {Algorithm, newDoc, localInsert, localDelete, yjsMod, automerge} from './crdts'
+import {Algorithm, newDoc, localInsert, localDelete, yjsMod, automerge, getArray} from './crdts'
+import assert from 'assert'
 
-const bench = (alg: Algorithm) => {
+const bench = (algName: string, alg: Algorithm) => {
   // const filename = 'sveltecomponent'
   const filename = 'automerge-paper'
   const {
@@ -11,7 +12,7 @@ const bench = (alg: Algorithm) => {
     txns
   } = JSON.parse(zlib.gunzipSync(fs.readFileSync(`../crdt-benchmarks/${filename}.json.gz`)).toString())
 
-  console.time(filename)
+  console.time(`${algName} ${filename}`)
   const doc = newDoc()
 
   for (const txn of txns) {
@@ -25,8 +26,10 @@ const bench = (alg: Algorithm) => {
       }
     }
   }
-  console.timeEnd(filename)
+  console.timeEnd(`${algName} ${filename}`)
+
+  assert.strictEqual(getArray(doc).join(''), endContent)
 }
 
-bench(yjsMod)
-bench(automerge)
+bench('yjs mod', yjsMod)
+bench('automerge', automerge)

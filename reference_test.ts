@@ -168,7 +168,7 @@ const randomizer = (mode: Mode) => {
 
     let nextItem = 0
     // console.log(docs)
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 100; i++) {
       // console.log(i)
       // if (i % 100 === 0) console.log(i)
 
@@ -212,6 +212,6 @@ const randomizer = (mode: Mode) => {
   }
 }
 
-// randomizer(Mode.Automerge)
-randomizer(Mode.Yjs)
+randomizer(Mode.Automerge)
+// randomizer(Mode.Yjs)
 

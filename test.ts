@@ -1,6 +1,6 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localInsert, localDelete, Doc, yjsMod, automerge, yjsActual} from './crdts'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localInsert, localDelete, Doc, yjsMod, automerge, yjsActual, printDebugStats} from './crdts'
 
 /// TESTS
 
@@ -245,3 +245,5 @@ runTests(yjsActual)
 runTests(automerge)
 
 // console.log('hits', hits, 'misses', misses)
+
+printDebugStats()
