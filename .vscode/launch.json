@@ -11,8 +11,21 @@
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "program": "${workspaceFolder}/identical_am.ts",
+      "program": "${workspaceFolder}/reference_test.ts",
       "runtimeArgs": ["-r", "ts-node/register"],
+      "outFiles": [
+        "${workspaceFolder}/**/*.js"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "sync9",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "program": "${workspaceFolder}/sync9.js",
+      // "runtimeArgs": ["-r", "ts-node/register"],
       "outFiles": [
         "${workspaceFolder}/**/*.js"
       ]

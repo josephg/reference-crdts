@@ -4,7 +4,7 @@ import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, lo
 
 /// TESTS
 
-const runTests = (alg: Algorithm) => { // Separate scope for namespace protection.
+const runTests = (algName: string, alg: Algorithm) => { // Separate scope for namespace protection.
   const random = seed('ax')
   const randInt = (n: number) => Math.floor(random() * n)
   const randArrItem = (arr: any[] | string) => arr[randInt(arr.length)]
@@ -101,6 +101,23 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
     integrateFuzz(ops, ['a', 'a', 'a', 'b', 'b', 'b'])
   }
 
+  // Other variant with changed object IDs. The order should not be
+  // dependent on the IDs of these items. I'd love to find a better way
+  // to test this.
+  const interleavingForward2 = () => {
+    const ops = [
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a', ['X', 0], ['A', 0], null, 1),
+      makeItem('a', ['Y', 0], ['X', 0], null, 2),
+
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b', ['C', 0], ['B', 0], null, 1),
+      makeItem('b', ['D', 0], ['C', 0], null, 2),
+    ]
+
+    integrateFuzz(ops, ['a', 'a', 'a', 'b', 'b', 'b'])
+  }
+
   const interleavingBackward = () => {
     const ops = [
       makeItem('a', ['A', 0], null, null, 0),
@@ -115,6 +132,18 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
     integrateFuzz(ops, ['a', 'a', 'a', 'b', 'b', 'b'])
   }
 
+  const interleavingBackward2 = () => {
+    const ops = [
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a', ['X', 0], null, ['A', 0], 1),
+
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b', ['B', 1], null, ['B', 0], 1),
+    ]
+
+    integrateFuzz(ops, ['a', 'a', 'b', 'b'])
+  }
+
   const withTails = () => {
     const ops = [
       makeItem('a', ['A', 0], null, null, 0),
@@ -124,6 +153,20 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
       makeItem('b', ['B', 0], null, null, 0),
       makeItem('b0', ['B', 1], null, ['B', 0], 1), // left
       makeItem('b1', ['B', 2], ['B', 0], null, 2), // right
+    ]
+
+    integrateFuzz(ops, ['a0', 'a', 'a1', 'b0', 'b', 'b1'])
+  }
+
+  const withTails2 = () => {
+    const ops = [
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a0', ['A', 1], null, ['A', 0], 1), // left
+      makeItem('a1', ['A', 2], ['A', 0], null, 2), // right
+
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b0', ['1', 0], null, ['B', 0], 1), // left
+      makeItem('b1', ['B', 1], ['B', 0], null, 2), // right
     ]
 
     integrateFuzz(ops, ['a0', 'a', 'a1', 'b0', 'b', 'b1'])
@@ -224,13 +267,17 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   }
 
 
+  console.log(`--- Running tests for ${algName} ---`)
   const tests = [
     smoke,
     smokeMerge,
     concurrentAvsB,
     interleavingForward,
+    interleavingForward2,
     interleavingBackward,
+    interleavingBackward2,
     withTails,
+    withTails2,
     localVsConcurrent,
     fuzzSequential,
     fuzzMultidoc
@@ -240,9 +287,9 @@ const runTests = (alg: Algorithm) => { // Separate scope for namespace protectio
   // fuzzMultidoc()
 }
 
-runTests(yjsMod)
-runTests(yjsActual)
-runTests(automerge)
+runTests('yjsmod', yjsMod)
+runTests('yjs', yjsActual)
+runTests('automerge', automerge)
 
 // console.log('hits', hits, 'misses', misses)
 

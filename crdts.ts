@@ -24,6 +24,7 @@ export type Item<T> = {
 
 export interface Doc<T = string> {
   content: Item<T>[]
+
   version: Version // agent => last seen seq.
   length: number // Number of items not deleted
 
@@ -180,21 +181,22 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
   let left = findItem(doc, newItem.originLeft, idx_hint - 1)
   let destIdx = left + 1
   let right = newItem.originRight == null ? doc.content.length : findItem(doc, newItem.originRight, idx_hint)
-  let conflictStart = -1
-
-  const startConflict = (i: number) => conflictStart = i
-  const resetConflict = () => conflictStart = -1
+  let scanning = false
 
   for (let i = destIdx; ; i++) {
     // Inserting at the end of the document. Just insert.
-    if (conflictStart === -1) destIdx = i
+    if (!scanning) destIdx = i
     if (i === doc.content.length) break
     if (i === right) break // No ambiguity / concurrency. Insert here.
 
-    let o = doc.content[i]
+    let other = doc.content[i]
 
-    let oleft = findItem(doc, o.originLeft, idx_hint - 1)
-    let oright = o.originRight == null ? doc.content.length : findItem(doc, o.originRight, idx_hint)
+    let oleft = findItem(doc, other.originLeft, idx_hint - 1)
+    let oright = other.originRight == null ? doc.content.length : findItem(doc, other.originRight, idx_hint)
+
+    // The logic below summarizes to:
+    // if (oleft < left || (oleft === left && oright === right && newItem.id[0] < o.id[0])) break
+    // if (oleft === left) scanning = oright < right
 
     // Ok now we implement the punnet square of behaviour
     if (oleft < left) {
@@ -204,18 +206,20 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
       // Middle row.
       if (oright < right) {
         // This is tricky. We're looking at an item we *might* insert after - but we can't tell yet!
-        startConflict(i)
+        scanning = true
         continue
       } else if (oright === right) {
         // Raw conflict. Order based on user agents.
-        resetConflict()
-        if (newItem.id[0] < o.id[0]) break
-        else continue
-      } else {
-        resetConflict()
+        if (newItem.id[0] < other.id[0]) break
+        else {
+          scanning = false
+          continue
+        }
+      } else { // oright > right
+        scanning = false
         continue
       }
-    } else {
+    } else { // oleft > left
       // Bottom row. Arbitrary (skip), skip, skip
       continue
     }
@@ -234,14 +238,11 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
   let left = findItem(doc, newItem.originLeft, idx_hint - 1)
   let destIdx = left + 1
   let right = newItem.originRight == null ? doc.content.length : findItem(doc, newItem.originRight, idx_hint)
-  let conflictStart = -1
-
-  const startConflict = (i: number) => conflictStart = i
-  const resetConflict = () => conflictStart = -1
+  let scanning = false
 
   for (let i = destIdx; ; i++) {
     // Inserting at the end of the document. Just insert.
-    if (conflictStart === -1) destIdx = i
+    if (!scanning) destIdx = i
     if (i === doc.content.length) break
     if (i === right) break // No ambiguity / concurrency. Insert here.
 
@@ -250,6 +251,10 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
     let oleft = findItem(doc, o.originLeft, idx_hint - 1)
     let oright = o.originRight == null ? doc.content.length : findItem(doc, o.originRight, idx_hint)
 
+    // The logic below can be summarized in these two lines:
+    // if (oleft < left || (oleft === left && oright === right && newItem.id[0] <= o.id[0])) break
+    // if (oleft === left) scanning = newItem.id[0] <= o.id[0]
+
     // Ok now we implement the punnet square of behaviour
     if (oleft < left) {
       // Top row. Insert, insert, arbitrary (insert)
@@ -257,12 +262,12 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
     } else if (oleft === left) {
       // Middle row.
       if (newItem.id[0] > o.id[0]) {
-        resetConflict()
+        scanning = false
         continue
       } else if (oright === right) {
         break
       } else {
-        startConflict(i)
+        scanning = true
         continue
       }
     } else {
@@ -304,6 +309,9 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
     // efficiently.
     let oparent = findItem(doc, o.originLeft, idx_hint - 1)
 
+    // All the logic below can be expressed in this single line:
+    // if (oparent < parent || (oparent === parent && (newItem.seq === o.seq) && id[0] < o.id[0])) break
+
     // Ok now we implement the punnet square of behaviour
     if (oparent < parent) {
       // We've gotten to the end of the list of children. Stop here.
@@ -315,9 +323,18 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
       // are sorted in *ascending* order of useragent rather than
       // *descending* order as in the actual automerge. It doesn't
       // matter for correctness, but its something to keep in mind if
-      // compatibility matters.
-      if (newItem.seq > o.seq
-        || newItem.seq === o.seq && id[0] < o.id[0]) break
+      // compatibility matters. The reference checker inverts AM client
+      // ids.
+
+      // Inverted item sequence number comparisons are used in place of originRight for AM.
+      if (newItem.seq > o.seq) {
+        break
+      } else if (newItem.seq === o.seq) {
+        if (id[0] < o.id[0]) break
+        else continue
+      } else {
+        continue
+      }
     } else {
       // Skip child
       continue
@@ -336,14 +353,21 @@ export const yjsMod: Algorithm = {
 }
 
 export const yjsActual: Algorithm = {
-  integrate: integrateYjs
+  integrate: integrateYjs,
+
+  ignoreTests: ['withTails2']
 }
 
 export const automerge: Algorithm = {
   integrate: integrateAutomerge,
 
   // Automerge doesn't handle these cases as I would expect.
-  ignoreTests: ['interleavingBackward', 'withTails']
+  ignoreTests: [
+    'interleavingBackward',
+    'interleavingBackward2',
+    'withTails',
+    'withTails2'
+  ]
 }
 
 export const printDebugStats = () => {

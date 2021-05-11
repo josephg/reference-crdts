@@ -7,6 +7,7 @@ import assert from 'assert/strict'
 import seed from 'seed-random'
 import consoleLib from 'console'
 import * as crdts from './crdts'
+import * as sync9 from './sync9'
 
 type DocType = {arr: number[]}
 
@@ -20,6 +21,7 @@ const amInit = automerge.from<DocType>({arr: []})
 enum Mode {
   Automerge,
   Yjs,
+  Sync9,
 }
 
 class DocPair {
@@ -29,29 +31,40 @@ class DocPair {
   algorithm: crdts.Algorithm
   sephdoc: crdts.Doc<number>
 
-  am: automerge.FreezeObject<DocType> | null
-  ydoc: Y.Doc | null
+  am?: automerge.FreezeObject<DocType>
+  ydoc?: Y.Doc
+  sync9?: any
 
   constructor(id: number, mode: Mode) {
     this.id = id
     this.idStr = `${id}`
 
-    this.algorithm = mode === Mode.Automerge ? crdts.automerge : crdts.yjsActual
+    this.algorithm = mode === Mode.Automerge ? crdts.automerge
+      : mode === Mode.Yjs ? crdts.yjsActual
+      : crdts.yjsMod
+
     this.sephdoc = crdts.newDoc()
 
     // this.am = automerge.from<DocType>({arr: []}, idStr)
     // this.am = automerge.from<DocType>(amInit, idStr)
-    if (mode === Mode.Automerge) {
-      // Automerge client ID strings must be valid hex strings, and the
-      // concurrent item ordering is reversed from my algorithms here.
-      // (So I'm inversing their order here).
-      const amId = Buffer.from([255 - id]).toString('hex')
-      this.am = automerge.merge(automerge.init(amId), amInit)
-      this.ydoc = null
-    } else {
-      this.ydoc = new Y.Doc()
-      this.ydoc.clientID = id
-      this.am = null
+    switch (mode) {
+      case Mode.Automerge: {
+        // Automerge client ID strings must be valid hex strings, and the
+        // concurrent item ordering is reversed from my algorithms here.
+        // (So I'm inversing their order here).
+        const amId = Buffer.from([255 - id]).toString('hex')
+        this.am = automerge.merge(automerge.init(amId), amInit)
+        break
+      }
+      case Mode.Yjs: {
+        this.ydoc = new Y.Doc()
+        this.ydoc.clientID = id
+        break
+      }
+      case Mode.Sync9: {
+        this.sync9 = sync9.make(this.idStr)
+        break
+      }
     }
   }
 
@@ -66,6 +79,10 @@ class DocPair {
       this.am = automerge.change(this.am, d => {
         d.arr.splice(pos, 0, content)
       })
+    }
+
+    if (this.sync9 != null) {
+      sync9.insert(this.sync9, pos, content)
     }
   }
 
@@ -82,6 +99,8 @@ class DocPair {
         d.arr.splice(pos, 1)
       })
     }
+
+    if (this.sync9) throw Error('nyi')
   }
 
   mergeFrom(other: DocPair) {
@@ -110,6 +129,10 @@ class DocPair {
       // console.log('yjs now', this.ydoc?.getArray().toArray())
     }
 
+    if (this.sync9 != null) {
+      this.sync9 = sync9.merge(this.sync9, other.sync9)
+    }
+
     this.check()
     // console.log('->', this.content)
   }
@@ -121,15 +144,20 @@ class DocPair {
   }
 
   check() {
+    const myContent = crdts.getArray(this.sephdoc)
     if (this.am != null) {
       // console.log('am', this.sephdoc.content)
-      assert.deepStrictEqual(crdts.getArray(this.sephdoc), this.am.arr)
+      assert.deepStrictEqual(myContent, this.am.arr)
     }
 
     if (this.ydoc != null) {
       // assert.equal(this.am.arr.length, this.ydoc?.getArray().length)
       // assert.deepEqual(this.am.arr, this.ydoc?.getArray().toArray())
-      assert.deepStrictEqual(crdts.getArray(this.sephdoc), this.ydoc.getArray().toArray())
+      assert.deepStrictEqual(myContent, this.ydoc.getArray().toArray())
+    }
+
+    if (this.sync9 != null) {
+      assert.deepStrictEqual(myContent, sync9.get_content(this.sync9))
     }
 
     // console.log('result', this.ydoc?.getArray().toArray())
@@ -155,12 +183,12 @@ class DocPair {
 
 
 const randomizer = (mode: Mode) => {
-  for (let j = 0; ; j++) {
-    console.log('j', j)
-    const random = seed(`aa ${j}`)
+  for (let iter = 0; ; iter++) {
+    if (iter % 20 === 0) console.log('iter', iter)
+    const random = seed(`aa ${iter}`)
     const randInt = (n: number) => Math.floor(random() * n)
     const randBool = (weight: number = 0.5) => random() < weight
-  
+
     const docs = new Array(3).fill(null).map((_, i) => new DocPair(i, mode))
     // const docs = new Array(1).fill(null).map((_, i) => new DocPair(i, mode))
 
