@@ -1,6 +1,6 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localInsert, localDelete, Doc, yjsMod, automerge, yjsActual, printDebugStats} from './crdts'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localDelete, Doc, yjsMod, automerge, yjsActual, printDebugStats, sync9, printTree} from './crdts'
 
 /// TESTS
 
@@ -33,6 +33,9 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
       alg.integrate(doc, op)
     }
 
+    // printTree(doc)
+
+    // console.log(doc)
     assert.deepStrictEqual(getArray(doc), expectedResult)
     // console.log(variants)
     return variants // Rough guess at the number of orderings
@@ -144,6 +147,18 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     integrateFuzz(ops, ['a', 'a', 'b', 'b'])
   }
 
+  const interleavingBackwardSync9 = () => {
+    const ops = [
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a', ['X', 0], ['A', 0, false], ['A', 0], 1),
+
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b', ['B', 1], ['B', 0, false], ['B', 0], 1),
+    ]
+
+    integrateFuzz(ops, ['a', 'a', 'b', 'b'])
+  }
+
   const withTails = () => {
     const ops = [
       makeItem('a', ['A', 0], null, null, 0),
@@ -172,6 +187,20 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     integrateFuzz(ops, ['a0', 'a', 'a1', 'b0', 'b', 'b1'])
   }
 
+  const withTails2Sync9 = () => {
+    const ops = [
+      makeItem('a', ['A', 0], null, null, 0),
+      makeItem('a0', ['A', 1], ['A', 0, false], ['A', 0], 1), // left
+      makeItem('a1', ['A', 2], ['A', 0, true], null, 2), // right
+
+      makeItem('b', ['B', 0], null, null, 0),
+      makeItem('b0', ['1', 0], ['B', 0, false], ['B', 0], 1), // left
+      makeItem('b1', ['B', 1], ['B', 0], null, 2), // right
+    ]
+
+    integrateFuzz(ops, ['a0', 'a', 'a1', 'b0', 'b', 'b1'])
+  }
+
   const localVsConcurrent = () => {
     // Check what happens when a top level concurrent change interacts
     // with a more localised change. (C vs D)
@@ -186,6 +215,23 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     integrateFuzz([a, b, c, d], ['a', 'd', 'b', 'c'])
   }
 
+  const fuzzer1 = () => {
+    const ops = [
+      makeItem(3, ['0', 0], null, null, 0),
+      makeItem(5, ['1', 0], null, null, 0),
+      makeItem(9, ['1', 1], null, ['1', 0], 1),
+      makeItem(1, ['2', 0], null, null, 0),
+      makeItem(4, ['2', 1], ['0', 0], ['2', 0], 1),
+
+      makeItem(10, ['1', 2], ['2', 1], ['1', 1], 2),
+      makeItem(7, ['2', 2], ['2', 1], ['2', 0], 2),
+    ]
+
+    const doc = newDoc<number>()
+    ops.forEach(op => alg.integrate(doc, op))
+    console.log(getArray(doc))
+  }
+
   const fuzzSequential = () => {
     const doc = newDoc()
     let expectedContent: string[] = []
@@ -194,13 +240,14 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
 
     for (let i = 0; i < 1000; i++) {
       // console.log(i)
+      // console.log(doc)
       if (doc.length === 0 || randBool(0.5)) {
         // insert
         const pos = randInt(doc.length + 1)
         const content: string = randArrItem(alphabet)
         const agent = randArrItem(agents)
         // console.log('insert', agent, pos, content)
-        localInsert(alg, doc, agent, pos, content)
+        alg.localInsert(alg, doc, agent, pos, content)
         expectedContent.splice(pos, 0, content)
       } else {
         // Delete
@@ -210,6 +257,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
         localDelete(doc, agent, pos)
         expectedContent.splice(pos, 1)
       }
+      // console.log('->', doc)
 
       assert.deepStrictEqual(doc.length, expectedContent.length)
       assert.deepStrictEqual(getArray(doc), expectedContent)
@@ -244,7 +292,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
             const pos = randInt(doc.length + 1)
             const content = ++nextItem
             // console.log('insert', agent, pos, content)
-            localInsert(alg, doc, doc.agent, pos, content)
+            alg.localInsert(alg, doc, doc.agent, pos, content)
           } else {
             // Delete - disabled for now because mergeInto doesn't support deletes
             const pos = randInt(doc.length)
@@ -283,13 +331,18 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     fuzzMultidoc
   ]
   tests.forEach(test)
+  // interleavingBackwardSync9()
+  // withTails2()
+  // withTails2Sync9()
   // fuzzSequential()
   // fuzzMultidoc()
+  // fuzzer1()
 }
 
 runTests('yjsmod', yjsMod)
 runTests('yjs', yjsActual)
 runTests('automerge', automerge)
+// runTests('sync9', sync9)
 
 // console.log('hits', hits, 'misses', misses)
 

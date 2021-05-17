@@ -37,11 +37,11 @@ class DocPair {
 
   constructor(id: number, mode: Mode) {
     this.id = id
-    this.idStr = `${id}`
+    this.idStr = 'abc'[id]
 
     this.algorithm = mode === Mode.Automerge ? crdts.automerge
       : mode === Mode.Yjs ? crdts.yjsActual
-      : crdts.yjsMod
+      : crdts.sync9
 
     this.sephdoc = crdts.newDoc()
 
@@ -71,7 +71,8 @@ class DocPair {
   // ins(pos: number, content: number[]) {
   ins(pos: number, content: number) {
     // assert(content.length === 1)
-    crdts.localInsert(this.algorithm, this.sephdoc, this.idStr, pos, content)
+    this.algorithm.localInsert(this.algorithm, this.sephdoc, this.idStr, pos, content)
+    // console.log('->ins', pos, content, this.sephdoc)
 
     this.ydoc?.getArray().insert(pos, [content])
 
@@ -145,8 +146,8 @@ class DocPair {
 
   check() {
     const myContent = crdts.getArray(this.sephdoc)
+    // console.log('am', this.sephdoc.content)
     if (this.am != null) {
-      // console.log('am', this.sephdoc.content)
       assert.deepStrictEqual(myContent, this.am.arr)
     }
 
@@ -157,7 +158,14 @@ class DocPair {
     }
 
     if (this.sync9 != null) {
-      assert.deepStrictEqual(myContent, sync9.get_content(this.sync9))
+      try {
+        // console.log(this.sephdoc)
+        assert.deepStrictEqual(myContent, sync9.get_content(this.sync9))
+      } catch (e) {
+        console.log('am', this.sephdoc.content)
+        crdts.printTree(this.sephdoc)
+        throw e
+      }
     }
 
     // console.log('result', this.ydoc?.getArray().toArray())
@@ -177,7 +185,7 @@ class DocPair {
 
   get length(): number {
     // return this.am.arr.length
-    return this.sephdoc.content.length
+    return this.sephdoc.content.reduce((sum, item) => item.isDeleted || item.content == null ? sum : sum + 1, 0)
   }
 }
 
@@ -185,7 +193,8 @@ class DocPair {
 const randomizer = (mode: Mode) => {
   for (let iter = 0; ; iter++) {
     if (iter % 20 === 0) console.log('iter', iter)
-    const random = seed(`aa ${iter}`)
+    // console.log('iter', iter)
+    const random = seed(`zz ${iter}`)
     const randInt = (n: number) => Math.floor(random() * n)
     const randBool = (weight: number = 0.5) => random() < weight
 
@@ -198,6 +207,7 @@ const randomizer = (mode: Mode) => {
     // console.log(docs)
     for (let i = 0; i < 100; i++) {
       // console.log(i)
+      // if (iter === 8 && i === 5) debugger
       // if (i % 100 === 0) console.log(i)
 
       // Generate some random operations
@@ -241,5 +251,6 @@ const randomizer = (mode: Mode) => {
 }
 
 randomizer(Mode.Automerge)
-// randomizer(Mode.Yjs)
+randomizer(Mode.Yjs)
+// randomizer(Mode.Sync9)
 

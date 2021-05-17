@@ -1,29 +1,80 @@
 import assert from 'assert'
+import consoleLib from 'console'
+import chalk from 'chalk'
 
-export type Id = [agent: string, seq: number]
+globalThis.console = new consoleLib.Console({
+  stdout: process.stdout, stderr: process.stderr,
+  inspectOptions: {depth: null}
+})
+
+// atEnd flag for sync9.
+export type Id = [agent: string, seq: number, atEnd?: boolean]
 export type Version = Record<string, number> // Last seen seq for each agent.
 
 export type Algorithm = {
+  localInsert: <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => void
   integrate: <T>(doc: Doc<T>, newItem: Item<T>, idx_hint?: number) => void
   ignoreTests?: string[]
 }
 
-export type Item<T> = {
+// These aren't used, but they should be. They show how the items actually work for each algorithm.
+type YjsItem<T> = {
   content: T,
   id: Id,
 
   // Left and right implicit in document list.
   // null represents document's root / end.
   originLeft: Id | null,
-  originRight: Id | null, // Only for yjs, seph
-
-  seq: number, // only for automerge. > all prev sequence numbers.
+  originRight: Id | null,
 
   isDeleted: boolean,
 }
 
+type AMItem<T> = {
+  content: T,
+  id: Id,
+
+  originLeft: Id | null,
+  seq: number, // Must be larger than all prev sequence numbers on the peer that created this.
+
+  isDeleted: boolean,
+}
+
+type Sync9Item<T> = {
+  // Sync9 items are splittable spans - which is weird in this
+  // library because items only contain 1 entry. So the entry is
+  // nullable, thus having length 0 or 1.
+  content: T | null,
+
+  id: Id,
+
+  // Actually [id, seq, true/false]. The last term identifies whether we
+  // insert at the start / end.
+  originLeft: Id | null,
+
+  isDeleted: boolean,
+}
+
+export type Item<T> = {
+  // Sync9 items must be splittable spans - which is weird in this
+  // library because items only contain 1 entry. So the entry is
+  // nullable, thus having length 0 or 1.
+  content: T | null,
+
+  // For sync9 the seq must advance by 2 each time, so we have insert positions both before and after this item.
+  id: Id,
+
+  originLeft: Id | null,
+  originRight: Id | null,
+  seq: number,
+
+  isDeleted: boolean,
+}
+
+
+
 export interface Doc<T = string> {
-  content: Item<T>[]
+  content: Item<T>[] // Could take Item as a type parameter, but eh. This is better for demos.
 
   version: Version // agent => last seen seq.
   length: number // Number of items not deleted
@@ -40,8 +91,12 @@ export const newDoc = <T>(): Doc<T> => ({
 
 // **** Common code and helpers
 
+// We never actually compare the third argument in sync9.
+const idEq2 = (a: Id | null, agent: string, seq: number): boolean => (
+  a != null && (a[0] === agent && a[1] === seq)
+)
 const idEq = (a: Id | null, b: Id | null): boolean => (
-  a === b || (a != null && b != null && a[0] === b[0] && a[1] === b[1])
+  a == b || (a != null && b != null && a[0] === b[0] && a[1] === b[1])
 )
 
 let hits = 0
@@ -52,9 +107,12 @@ let misses = 0
 const findItem = <T>(doc: Doc<T>, needle: Id | null, idx_hint: number = -1): number => {
   if (needle == null) return -1
   else {
+    const [agent, seq, atEnd] = needle
     // This little optimization *halves* the time to run the editing trace benchmarks.
     if (idx_hint >= 0 && idx_hint < doc.content.length) {
-      if (idEq(doc.content[idx_hint].id, needle)) {
+      const hint_item = doc.content[idx_hint]
+      if ((!atEnd && idEq2(hint_item.id, agent, seq))
+          || (hint_item.content != null && atEnd && idEq2(hint_item.id, agent, seq))) {
         hits++
         return idx_hint
       }
@@ -69,7 +127,10 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null, idx_hint: number = -1): num
     }
 
     misses++
-    const idx = doc.content.findIndex(({id}) => idEq(id, needle))
+    const idx = doc.content.findIndex(({content, id}) => (
+      (!atEnd && idEq2(id, agent, seq)) || (content != null && atEnd && idEq2(id, agent, seq)))
+    )
+      // : doc.content.findIndex(({id}) => idEq(id, needle))
     if (idx < 0) throw Error('Could not find item') // Could use a ternary if not for this!
     return idx
   }
@@ -80,13 +141,15 @@ const findItem = <T>(doc: Doc<T>, needle: Id | null, idx_hint: number = -1): num
 //   return last == null ? 0 : last + 1
 // }
 
-const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
+const findItemAtPos = <T>(doc: Doc<T>, pos: number, stick_end: boolean = false): number => {
   let i = 0
   // console.log('pos', pos, doc.length, doc.content.length)
   for (; i < doc.content.length; i++) {
     const item = doc.content[i]
-    if (item.isDeleted) continue
-    if (pos === 0) return i
+    if (stick_end && pos === 0) return i
+    else if (item.isDeleted || item.content == null) continue
+    else if (pos === 0) return i
+
     pos--
   }
 
@@ -94,16 +157,18 @@ const findItemAtPos = <T>(doc: Doc<T>, pos: number): number => {
   else throw Error('past end of the document')
 }
 
+// const nextSeq = (agent: string): number =>
+
 export const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq?: number): Item<T> => ({
   content,
   id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
   isDeleted: false,
-  originLeft,
+  originLeft: originLeft ? [originLeft[0], originLeft[1], originLeft[2] ?? true] : null, // A hack for running the tests with sync9.
   originRight,
   seq: amSeq ?? -1, // Only for AM.
 })
 
-export const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
+const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
   let i = findItemAtPos(doc, pos)
   alg.integrate(doc, {
     content,
@@ -112,6 +177,33 @@ export const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: 
     originLeft: doc.content[i - 1]?.id ?? null,
     originRight: doc.content[i]?.id ?? null, // Only for yjs
     seq: doc.maxSeq + 1, // Only for AM.
+  }, i)
+}
+
+const localInsertSync9 = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
+  let i = findItemAtPos(doc, pos, false)
+  // For sync9 our insertion point is different based on whether or not our parent has children.
+  let parentIdBase = doc.content[i - 1]?.id ?? null
+  let currentItem = doc.content[i]
+
+  let parentId: Id | null
+  if (currentItem != null && idEq(currentItem.originLeft, parentIdBase)) {
+    // The parent already has children. Slice the first child and insert after that.
+    parentId = [currentItem.id[0], currentItem.id[1], false]
+  } else {
+    parentId = parentIdBase == null ? null : [parentIdBase[0], parentIdBase[1], true]
+  }
+  // const hasChildren = (i === 0 && doc.content.length) || (i > 0 && doc.content[i - 1].id
+
+  // console.log('parentId', parentId)
+
+  alg.integrate(doc, {
+    content,
+    id: [agent, (doc.version[agent] ?? -1) + 1],
+    isDeleted: false,
+    originLeft: parentId,
+    originRight: null, //doc.content[i]?.id ?? null, // Only for yjs
+    seq: 0, //doc.maxSeq + 1, // Only for AM.
   }, i)
 }
 
@@ -125,8 +217,21 @@ export const localDelete = <T>(doc: Doc<T>, agent: string, pos: number): void =>
 }
 
 export const getArray = <T>(doc: Doc<T>): T[] => (
-  doc.content.filter(i => !i.isDeleted).map(i => i.content)
+  doc.content.filter(i => !i.isDeleted && i.content != null).map(i => i.content!)
 )
+
+export const printTree = <T>(doc: Doc<T>) => {
+  const depth: Record<string, number> = {}
+  const kForId = (id: Id, c: T | null) => `${id[0]} ${id[1]} ${id[2] ?? c != null}`
+  for (const i of doc.content) {
+    const d = i.originLeft == null ? 0 : depth[kForId(i.originLeft, i.content)] + 1
+    depth[kForId(i.id, i.content)] = d
+
+    const content = `${i.content != null ? chalk.magenta(i.content) : '.'} at [${i.id}] (parent [${i.originLeft}])`
+    // console.log(`${'| '.repeat(d)}${i.content == null ? chalk.strikethrough(content) : content}`)
+    console.log(`${'| '.repeat(d)}${i.content == null ? chalk.grey(content) : content}`)
+  }
+}
 
 export const isInVersion = (id: Id | null, version: Version) => {
   if (id == null) return true
@@ -147,7 +252,7 @@ export const canInsertNow = <T>(op: Item<T>, doc: Doc<T>): boolean => (
 // NOTE: This currently does not support moving deletes!
 export const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) => {
   // The list of operations we need to integrate
-  const missing: (Item<T> | null)[] = src.content.filter(op => !isInVersion(op.id, dest.version))
+  const missing: (Item<T> | null)[] = src.content.filter(op => op.content != null && !isInVersion(op.id, dest.version))
   let remaining = missing.length
 
   while (remaining > 0) {
@@ -227,7 +332,7 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
 
   // We've found the position. Insert here.
   doc.content.splice(destIdx, 0, newItem)
-  doc.length += 1
+  if (!newItem.isDeleted) doc.length += 1
 }
 
 const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
@@ -246,10 +351,10 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
     if (i === doc.content.length) break
     if (i === right) break // No ambiguity / concurrency. Insert here.
 
-    let o = doc.content[i]
+    let other = doc.content[i]
 
-    let oleft = findItem(doc, o.originLeft, idx_hint - 1)
-    let oright = o.originRight == null ? doc.content.length : findItem(doc, o.originRight, idx_hint)
+    let oleft = findItem(doc, other.originLeft, idx_hint - 1)
+    let oright = other.originRight == null ? doc.content.length : findItem(doc, other.originRight, idx_hint)
 
     // The logic below can be summarized in these two lines:
     // if (oleft < left || (oleft === left && oright === right && newItem.id[0] <= o.id[0])) break
@@ -261,7 +366,7 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
       break
     } else if (oleft === left) {
       // Middle row.
-      if (newItem.id[0] > o.id[0]) {
+      if (newItem.id[0] > other.id[0]) {
         scanning = false
         continue
       } else if (oright === right) {
@@ -278,7 +383,7 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
 
   // We've found the position. Insert here.
   doc.content.splice(destIdx, 0, newItem)
-  doc.length += 1
+  if (!newItem.isDeleted) doc.length += 1
 }
 
 const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
@@ -345,20 +450,69 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
 
   // We've found the position. Insert here.
   doc.content.splice(destIdx, 0, newItem)
-  doc.length += 1
+  if (!newItem.isDeleted) doc.length += 1
+}
+
+const integrateSync9 = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+  const {id: [agent, seq, atEnd]} = newItem
+  const lastSeen = doc.version[agent] ?? -1
+  if (seq !== lastSeen + 1) throw Error('Operations out of order')
+  assert(!atEnd) // Should be undefined / false.
+  doc.version[agent] = seq
+
+  if (newItem.originLeft) assert(newItem.originLeft.length === 3)
+
+  let parentIdx = findItem(doc, newItem.originLeft, idx_hint - 1)
+  let destIdx = parentIdx + 1
+
+  // if (parentIdx >= 0 && newItem.originLeft && (newItem.originLeft[1] === doc.content[parentIdx].id[1]) && doc.content[parentIdx].content != null) {
+  if (parentIdx >= 0 && newItem.originLeft && !newItem.originLeft[2] && doc.content[parentIdx].content != null) {
+    // Split left item to add null content item to the set
+    doc.content.splice(parentIdx, 0, {
+      ...doc.content[parentIdx],
+      content: null
+    })
+    // We can skip the loop because we know we're an only child.
+
+  } else {
+    for (; destIdx < doc.content.length; destIdx++) {
+      let other = doc.content[destIdx]
+      // We still need to skip children of originLeft.
+      let oparentIdx = findItem(doc, other.originLeft, idx_hint - 1)
+
+      if (oparentIdx < parentIdx) break
+      else if (oparentIdx === parentIdx) {
+        // if (!idEq(other.originLeft, newItem.originLeft)) break
+        if (newItem.id[0] < other.id[0]) break
+        else continue
+      } else continue
+    }
+  }
+
+  // We've found the position. Insert here.
+  doc.content.splice(destIdx, 0, newItem)
+  if (!newItem.isDeleted && newItem.content != null) doc.length += 1
+}
+
+export const sync9: Algorithm = {
+  localInsert: localInsertSync9,
+  integrate: integrateSync9
 }
 
 export const yjsMod: Algorithm = {
+  localInsert,
   integrate: integrateYjsMod
 }
 
 export const yjsActual: Algorithm = {
+  localInsert,
   integrate: integrateYjs,
 
   ignoreTests: ['withTails2']
 }
 
 export const automerge: Algorithm = {
+  localInsert,
   integrate: integrateAutomerge,
 
   // Automerge doesn't handle these cases as I would expect.

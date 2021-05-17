@@ -74,7 +74,7 @@ function create_loom(L, send) {
   }
 
   L.set = (...patches) => {
-      var version = `${L.next_seq++}@${L.id}`
+      var version = `${L.id}@${L.next_seq++}`
       L.receive({cmd: 'set', version, parents: {...L.current_version}, patches})
       return version
   }
@@ -123,7 +123,7 @@ function create_loom(L, send) {
 
   L.receive = ({cmd, version, parents, patches, fissure, versions, fissures, unack_boundary, min_leaves, peer, conn}) => {
       if (cmd == 'get' || cmd == 'get_back') {
-          if (L.peers[peer]) throw Error('bad')
+        //   if (L.peers[peer]) throw Error('bad')
           L.peers[peer] = conn
 
           if (cmd == 'get') send(peer, {cmd: 'get_back'})
