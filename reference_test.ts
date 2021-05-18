@@ -18,13 +18,15 @@ globalThis.console = new consoleLib.Console({
 
 const amInit = automerge.from<DocType>({arr: []})
 
-enum Mode {
+export enum Mode {
   Automerge,
   Yjs,
   Sync9,
 }
 
-class DocPair {
+let log = ''
+
+export class DocPair {
   id: number
   idStr: string
 
@@ -69,7 +71,7 @@ class DocPair {
   }
 
   // ins(pos: number, content: number[]) {
-  ins(pos: number, content: number) {
+  insert(pos: number, content: number) {
     // assert(content.length === 1)
     this.algorithm.localInsert(this.sephdoc, this.idStr, pos, content)
     // console.log('->ins', pos, content, this.sephdoc)
@@ -163,6 +165,7 @@ class DocPair {
         assert.deepStrictEqual(myContent, sync9.get_content(this.sync9))
       } catch (e) {
         console.log('am', this.sephdoc.content)
+        console.log(log)
         this.algorithm.printDoc(this.sephdoc)
         throw e
       }
@@ -189,7 +192,6 @@ class DocPair {
   }
 }
 
-
 const randomizer = (mode: Mode) => {
   for (let iter = 0; ; iter++) {
     if (iter % 20 === 0) console.log('iter', iter)
@@ -200,6 +202,8 @@ const randomizer = (mode: Mode) => {
 
     const docs = new Array(3).fill(null).map((_, i) => new DocPair(i, mode))
     // const docs = new Array(1).fill(null).map((_, i) => new DocPair(i, mode))
+
+    log = ''
 
     const randDoc = () => docs[randInt(docs.length)]
 
@@ -227,7 +231,8 @@ const randomizer = (mode: Mode) => {
           const content = ++nextItem
           const pos = randInt(len + 1)
           // console.log('insert', pos, content)
-          doc.ins(pos, content)
+          doc.insert(pos, content)
+          log += `${doc.idStr}.insert(${pos}, ${content})\n`
         } else {
           // Delete something
           const pos = randInt(len)
@@ -244,13 +249,15 @@ const randomizer = (mode: Mode) => {
       const b = randDoc()
       if (a !== b) {
         // console.log('merging', a.id, b.id, a.content, b.content)
+        log += `merge(${a.idStr}, ${b.idStr})\n`
         a.merge(b)
       }
     }
   }
 }
 
-randomizer(Mode.Automerge)
-randomizer(Mode.Yjs)
-// randomizer(Mode.Sync9)
-
+if (require.main === module) {
+  // randomizer(Mode.Automerge)
+  // randomizer(Mode.Yjs)
+  randomizer(Mode.Sync9)
+}

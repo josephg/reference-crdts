@@ -33,10 +33,15 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
       alg.integrate(doc, op)
     }
 
-    // printTree(doc)
+    // alg.printDoc(doc)
 
-    // console.log(doc)
-    assert.deepStrictEqual(getArray(doc), expectedResult)
+    try {
+      assert.deepStrictEqual(getArray(doc), expectedResult)
+    } catch(e) {
+      console.log()
+      alg.printDoc(doc)
+      throw e
+    }
     // console.log(variants)
     return variants // Rough guess at the number of orderings
   }
@@ -237,6 +242,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     let expectedContent: string[] = []
     const alphabet = 'xyz123'
     const agents = 'ABCDE'
+    let nextContent = 1
 
     for (let i = 0; i < 1000; i++) {
       // console.log(i)
@@ -244,9 +250,10 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
       if (doc.length === 0 || randBool(0.5)) {
         // insert
         const pos = randInt(doc.length + 1)
-        const content: string = randArrItem(alphabet)
+        // const content: string = randArrItem(alphabet)
+        const content = ''+nextContent++
         const agent = randArrItem(agents)
-        // console.log('insert', agent, pos, content)
+        // console.log('insert', agent, pos, `'${content}'`)
         alg.localInsert(doc, agent, pos, content)
         expectedContent.splice(pos, 0, content)
       } else {
@@ -259,6 +266,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
       }
       // console.log('->', doc)
 
+      // alg.printDoc(doc)
       assert.deepStrictEqual(doc.length, expectedContent.length)
       assert.deepStrictEqual(getArray(doc), expectedContent)
     }
@@ -342,6 +350,8 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
 runTests('yjsmod', yjsMod)
 runTests('yjs', yjs)
 runTests('automerge', automerge)
+
+// For sync9 the IDs hardcoded in these tests are misleading.
 // runTests('sync9', sync9)
 
 // console.log('hits', hits, 'misses', misses)

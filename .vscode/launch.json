@@ -11,7 +11,7 @@
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "program": "${workspaceFolder}/reference_test.ts",
+      "program": "${workspaceFolder}/test.ts",
       "runtimeArgs": ["-r", "ts-node/register"],
       "outFiles": [
         "${workspaceFolder}/**/*.js"

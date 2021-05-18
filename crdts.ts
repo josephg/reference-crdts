@@ -182,19 +182,21 @@ function localInsert<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number
 }
 
 function localInsertSync9<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) {
-  let i = findItemAtPos(doc, pos, false)
+  let i = findItemAtPos(doc, pos, true)
   // For sync9 our insertion point is different based on whether or not our parent has children.
   let parentIdBase = doc.content[i - 1]?.id ?? null
-  let currentItem = doc.content[i]
+  let originLeft: Id | null = parentIdBase == null ? null : [parentIdBase[0], parentIdBase[1], true]
 
-  let parentId: Id | null
-  if (currentItem != null && idEq(currentItem.originLeft, parentIdBase)) {
-    // The parent already has children. Slice the first child and insert after that.
-    parentId = [currentItem.id[0], currentItem.id[1], false]
-  } else {
-    parentId = parentIdBase == null ? null : [parentIdBase[0], parentIdBase[1], true]
+  for (;; i++) {
+    // Scan until we find something with no children to insert after.
+    let nextItem = doc.content[i]
+    if (nextItem == null || !idEq(nextItem.originLeft, parentIdBase)) break
+
+    parentIdBase = nextItem.id
+    originLeft = [nextItem.id[0], nextItem.id[1], false]
+    // If the current item has content, we need to slice it and insert before its content.
+    if (nextItem.content != null) break
   }
-  // const hasChildren = (i === 0 && doc.content.length) || (i > 0 && doc.content[i - 1].id
 
   // console.log('parentId', parentId)
 
@@ -202,7 +204,7 @@ function localInsertSync9<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: n
     content,
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
-    originLeft: parentId,
+    originLeft,
     originRight: null, //doc.content[i]?.id ?? null, // Only for yjs
     seq: 0, //doc.maxSeq + 1, // Only for AM.
   }, i)
@@ -534,3 +536,30 @@ export const automerge: Algorithm = {
 export const printDebugStats = () => {
   console.log('hits', hits, 'misses', misses)
 }
+
+
+// ;(() => {
+//   console.clear()
+
+//   const alg = sync9
+
+//   let doc1 = newDoc()
+
+//   alg.localInsert(doc1, 'a', 0, 'x')
+//   alg.localInsert(doc1, 'a', 1, 'y')
+//   alg.localInsert(doc1, 'a', 0, 'z')
+
+//   // alg.printDoc(doc1)
+
+//   let doc2 = newDoc()
+
+//   alg.localInsert(doc2, 'b', 0, 'a')
+//   alg.localInsert(doc2, 'b', 1, 'b')
+//   // alg.localInsert(doc2, 'b', 2, 'c')
+
+//   mergeInto(alg, doc1, doc2)
+
+//   alg.printDoc(doc1)
+
+//   console.log('\n\n\n')
+// })()
