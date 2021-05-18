@@ -1,6 +1,6 @@
 import zlib from 'zlib'
 import fs from 'fs'
-import {Algorithm, newDoc, localInsert, localDelete, yjsMod, automerge, getArray} from './crdts'
+import {Algorithm, newDoc, localDelete, yjsMod, automerge, getArray} from './crdts'
 import assert from 'assert'
 
 const bench = (algName: string, alg: Algorithm) => {
@@ -20,7 +20,7 @@ const bench = (algName: string, alg: Algorithm) => {
       // Ignoring any deletes for now.
       const [pos, delCount, inserted] = patch as [number, number, string]
       if (inserted.length) {
-        localInsert(alg, doc, 'A', pos, inserted)
+        alg.localInsert(doc, 'A', pos, inserted)
       } else if (delCount) {
         localDelete(doc, 'A', pos)
       }

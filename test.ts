@@ -1,6 +1,6 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localDelete, Doc, yjsMod, automerge, yjsActual, printDebugStats, sync9, printTree} from './crdts'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9} from './crdts'
 
 /// TESTS
 
@@ -247,7 +247,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
         const content: string = randArrItem(alphabet)
         const agent = randArrItem(agents)
         // console.log('insert', agent, pos, content)
-        alg.localInsert(alg, doc, agent, pos, content)
+        alg.localInsert(doc, agent, pos, content)
         expectedContent.splice(pos, 0, content)
       } else {
         // Delete
@@ -292,7 +292,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
             const pos = randInt(doc.length + 1)
             const content = ++nextItem
             // console.log('insert', agent, pos, content)
-            alg.localInsert(alg, doc, doc.agent, pos, content)
+            alg.localInsert(doc, doc.agent, pos, content)
           } else {
             // Delete - disabled for now because mergeInto doesn't support deletes
             const pos = randInt(doc.length)
@@ -340,7 +340,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
 }
 
 runTests('yjsmod', yjsMod)
-runTests('yjs', yjsActual)
+runTests('yjs', yjs)
 runTests('automerge', automerge)
 // runTests('sync9', sync9)
 

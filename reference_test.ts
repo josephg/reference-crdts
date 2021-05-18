@@ -40,7 +40,7 @@ class DocPair {
     this.idStr = 'abc'[id]
 
     this.algorithm = mode === Mode.Automerge ? crdts.automerge
-      : mode === Mode.Yjs ? crdts.yjsActual
+      : mode === Mode.Yjs ? crdts.yjs
       : crdts.sync9
 
     this.sephdoc = crdts.newDoc()
@@ -71,7 +71,7 @@ class DocPair {
   // ins(pos: number, content: number[]) {
   ins(pos: number, content: number) {
     // assert(content.length === 1)
-    this.algorithm.localInsert(this.algorithm, this.sephdoc, this.idStr, pos, content)
+    this.algorithm.localInsert(this.sephdoc, this.idStr, pos, content)
     // console.log('->ins', pos, content, this.sephdoc)
 
     this.ydoc?.getArray().insert(pos, [content])
@@ -163,7 +163,7 @@ class DocPair {
         assert.deepStrictEqual(myContent, sync9.get_content(this.sync9))
       } catch (e) {
         console.log('am', this.sephdoc.content)
-        crdts.printTree(this.sephdoc)
+        this.algorithm.printDoc(this.sephdoc)
         throw e
       }
     }

@@ -12,8 +12,9 @@ export type Id = [agent: string, seq: number, atEnd?: boolean]
 export type Version = Record<string, number> // Last seen seq for each agent.
 
 export type Algorithm = {
-  localInsert: <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => void
+  localInsert: <T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => void
   integrate: <T>(doc: Doc<T>, newItem: Item<T>, idx_hint?: number) => void
+  printDoc: <T>(doc: Doc<T>) => void
   ignoreTests?: string[]
 }
 
@@ -168,9 +169,9 @@ export const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id |
   seq: amSeq ?? -1, // Only for AM.
 })
 
-const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
+function localInsert<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) {
   let i = findItemAtPos(doc, pos)
-  alg.integrate(doc, {
+  this.integrate(doc, {
     content,
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
@@ -180,7 +181,7 @@ const localInsert = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number,
   }, i)
 }
 
-const localInsertSync9 = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => {
+function localInsertSync9<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) {
   let i = findItemAtPos(doc, pos, false)
   // For sync9 our insertion point is different based on whether or not our parent has children.
   let parentIdBase = doc.content[i - 1]?.id ?? null
@@ -197,7 +198,7 @@ const localInsertSync9 = <T>(alg: Algorithm, doc: Doc<T>, agent: string, pos: nu
 
   // console.log('parentId', parentId)
 
-  alg.integrate(doc, {
+  this.integrate(doc, {
     content,
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
@@ -220,14 +221,16 @@ export const getArray = <T>(doc: Doc<T>): T[] => (
   doc.content.filter(i => !i.isDeleted && i.content != null).map(i => i.content!)
 )
 
-export const printTree = <T>(doc: Doc<T>) => {
+const printdoc = <T>(doc: Doc<T>, showSeq: boolean, showOR: boolean) => {
   const depth: Record<string, number> = {}
   const kForId = (id: Id, c: T | null) => `${id[0]} ${id[1]} ${id[2] ?? c != null}`
   for (const i of doc.content) {
     const d = i.originLeft == null ? 0 : depth[kForId(i.originLeft, i.content)] + 1
     depth[kForId(i.id, i.content)] = d
 
-    const content = `${i.content != null ? chalk.magenta(i.content) : '.'} at [${i.id}] (parent [${i.originLeft}])`
+    let content = `${i.content != null ? chalk.yellow(i.content) : '.'} at [${i.id}] (parent [${i.originLeft}])`
+    if (showSeq) content += ` seq ${i.seq}`
+    if (showOR) content += ` originRight [${i.originRight}]`
     // console.log(`${'| '.repeat(d)}${i.content == null ? chalk.strikethrough(content) : content}`)
     console.log(`${'| '.repeat(d)}${i.content == null ? chalk.grey(content) : content}`)
   }
@@ -496,17 +499,20 @@ const integrateSync9 = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1)
 
 export const sync9: Algorithm = {
   localInsert: localInsertSync9,
-  integrate: integrateSync9
+  integrate: integrateSync9,
+  printDoc(doc) { printdoc(doc, false, false) },
 }
 
 export const yjsMod: Algorithm = {
   localInsert,
-  integrate: integrateYjsMod
+  integrate: integrateYjsMod,
+  printDoc(doc) { printdoc(doc, false, true) },
 }
 
-export const yjsActual: Algorithm = {
+export const yjs: Algorithm = {
   localInsert,
   integrate: integrateYjs,
+  printDoc(doc) { printdoc(doc, false, true) },
 
   ignoreTests: ['withTails2']
 }
@@ -514,6 +520,7 @@ export const yjsActual: Algorithm = {
 export const automerge: Algorithm = {
   localInsert,
   integrate: integrateAutomerge,
+  printDoc(doc) { printdoc(doc, true, false) },
 
   // Automerge doesn't handle these cases as I would expect.
   ignoreTests: [
