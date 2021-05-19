@@ -49,9 +49,8 @@ type Sync9Item<T> = {
 
   id: Id,
 
-  // Actually [id, seq, true/false]. The last term identifies whether we
-  // insert at the start / end.
   originLeft: Id | null,
+  insertAfter: boolean, // identifies whether we insert at the start / end of originLeft.
 
   isDeleted: boolean,
 }

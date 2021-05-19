@@ -1,14 +1,17 @@
 # Reference CRDTs
 
-This repository contains simple reference implementations of yjs and automerge's list types. The implementations are fully compliant with upstream (that is, a randomizer can't make them diverge from the output given by those actual implementations).
+This repository contains simple proof-of-concept reference implementations of yjs, automerge and sync9's list types - all implemented in the same codebase. The implementations are reference-correct. That is, the resulting document order in all cases is the same as it is in the "real" versions (from yjs, automerge and "loom" (sync9's implementation)).
 
-These reference implementations are (mostly) optimized for readability and simplicity rather than performance. Running the automerge-perf editing history takes 30 seconds with yjs here, vs 4 seconds with the real yjs library.
+These reference implementation is (mostly) designed for readability and to show that the same codebase can handle all 3 implementations. But some complexity creeps in from overlaying all of the tricks needed for each approach. When code is only applicable to a single implementation, it is marked as such. (Eg maxSeq in document, or the alternate makeItem method for sync9).
 
-This library does not contain all the supporting tools in yjs and automerge, like encoding / decoding or transaction support. It probably never will have these features.
+This implementation is *not* optimized for performance. Running the automerge-perf editing history takes 30 seconds with yjs here, vs 1 second with the real, optimized yjs library.
+
+This library does not contain all the supporting tools in yjs and automerge, like encoding / decoding or transaction support. It never will have these features.
+
 
 ### Whats in the box
 
-The actual CRDT implementations share almost all their code, which lives entirely in crdts.ts. The main point of divergence is the `integrate` functions for each algorithm. These methods are called when inserting a new item, to scan the document and find the position at which the item should be inserted. This follows yjs's implementation style.
+The actual CRDT implementations share almost all their code, which lives entirely in [crdts.ts](crdts.ts). The main point of divergence is the `integrate` functions for each algorithm. These methods are called when inserting a new item, to scan the document and find the position at which the item should be inserted. This follows yjs's implementation style.
 
 The document itself is a document-ordered list of items. Each item stores:
 
@@ -19,8 +22,9 @@ export type Item<T> = {
 
   originLeft: Id | null, // null for start. Aka "parent" in automerge semantics.
 
-  originRight: Id | null, // Only used by yjs. Null for end. 
+  originRight: Id | null, // Only used by yjs. Null for end.
   seq: number, // Only used by automerge. Larger than all known sequence numbers when created.
+  insertAfter: boolean, // Only for sync9. Are we inserting before / after our parent?
 
   isDeleted: boolean,
 }
