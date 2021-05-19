@@ -1,14 +1,25 @@
 {
+  "name": "reference-crdts",
+  "version": "1.0.0",
+  "description": "Simple list implementations of list CRDTs'",
+  "main": "dist/crdts.js",
+  "repository": "git@github.com:josephg/reference-crdts.git",
+  "author": "Seph Gentle <me@josephg.com>",
+  "license": "MIT",
+  "scripts": {
+    "prepare": "tsc",
+    "test": "npx ts-node test.ts"
+  },
   "dependencies": {
     "@types/chalk": "^2.2.0",
-    "@types/node": "^15.0.1",
-    "@types/seed-random": "^2.2.0",
     "chalk": "^4.1.1",
-    "seed-random": "^2.2.0",
-    "ts-node": "^9.1.1",
-    "typescript": "^4.2.4"
+    "@types/node": "^15.0.1"
   },
   "devDependencies": {
+    "@types/seed-random": "^2.2.0",
+    "seed-random": "^2.2.0",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.2.4",
     "automerge": "0.14.2",
     "yjs": "^13.5.5"
   }

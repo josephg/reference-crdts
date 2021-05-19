@@ -4,6 +4,8 @@ import {Item, Algorithm, newDoc, canInsertNow, getArray, mergeInto, localDelete,
 
 /// TESTS
 
+let errored = false
+
 const runTests = (algName: string, alg: Algorithm) => { // Separate scope for namespace protection.
   const random = seed('ssx')
   const randInt = (n: number) => Math.floor(random() * n)
@@ -77,6 +79,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
       } catch (e) {
         process.stdout.write(`FAIL:\n`)
         console.log(e.stack)
+        errored = true
       }
     }
   }
@@ -330,11 +333,11 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     fuzzSequential,
     fuzzMultidoc
   ]
-  // tests.forEach(test)
+  tests.forEach(test)
   // interleavingBackwardSync9()
   // withTails2()
   // withTails2Sync9()
-  fuzzSequential()
+  // fuzzSequential()
   // fuzzMultidoc()
   // fuzzer1()
   console.log('\n\n')
@@ -348,3 +351,5 @@ runTests('sync9', sync9)
 // console.log('hits', hits, 'misses', misses)
 
 printDebugStats()
+
+process.exit(errored ? 1 : 0)
