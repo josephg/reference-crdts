@@ -205,8 +205,8 @@ function localInsertSync9<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: n
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
     originLeft,
-    originRight: null, //doc.content[i]?.id ?? null, // Only for yjs
-    seq: 0, //doc.maxSeq + 1, // Only for AM.
+    originRight: null, // Only for yjs
+    seq: 0, // Only for AM.
   }, i)
 }
 
