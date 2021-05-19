@@ -1,14 +1,24 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, makeItem, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9} from './crdts'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9, Id} from './crdts'
 
 /// TESTS
 
 const runTests = (algName: string, alg: Algorithm) => { // Separate scope for namespace protection.
-  const random = seed('ax')
+  const random = seed('ssx')
   const randInt = (n: number) => Math.floor(random() * n)
   const randArrItem = (arr: any[] | string) => arr[randInt(arr.length)]
   const randBool = (weight: number = 0.5) => random() < weight
+
+  const makeItem = <T>(content: T, idOrAgent: string | Id, originLeft: Id | null, originRight: Id | null, amSeq: number, sync9Parent: Id | null = originLeft, sync9InsertAfter: boolean = true): Item<T> => ({
+    content,
+    id: typeof idOrAgent === 'string' ? [idOrAgent, 0] : idOrAgent,
+    isDeleted: false,
+    originLeft: alg === sync9 ? sync9Parent : originLeft,
+    originRight,
+    insertAfter: sync9InsertAfter,
+    seq: amSeq ?? -1, // Only for AM.
+  })
 
   const integrateFuzzOnce = <T>(ops: Item<T>[], expectedResult: T[]): number => {
     let variants = 1
@@ -143,22 +153,10 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
   const interleavingBackward2 = () => {
     const ops = [
       makeItem('a', ['A', 0], null, null, 0),
-      makeItem('a', ['X', 0], null, ['A', 0], 1),
+      makeItem('a', ['X', 0], null, ['A', 0], 1, ['A', 0], false),
 
       makeItem('b', ['B', 0], null, null, 0),
-      makeItem('b', ['B', 1], null, ['B', 0], 1),
-    ]
-
-    integrateFuzz(ops, ['a', 'a', 'b', 'b'])
-  }
-
-  const interleavingBackwardSync9 = () => {
-    const ops = [
-      makeItem('a', ['A', 0], null, null, 0),
-      makeItem('a', ['X', 0], ['A', 0, false], ['A', 0], 1),
-
-      makeItem('b', ['B', 0], null, null, 0),
-      makeItem('b', ['B', 1], ['B', 0, false], ['B', 0], 1),
+      makeItem('b', ['B', 1], null, ['B', 0], 1, ['B', 0], false),
     ]
 
     integrateFuzz(ops, ['a', 'a', 'b', 'b'])
@@ -167,11 +165,11 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
   const withTails = () => {
     const ops = [
       makeItem('a', ['A', 0], null, null, 0),
-      makeItem('a0', ['A', 1], null, ['A', 0], 1), // left
+      makeItem('a0', ['A', 1], null, ['A', 0], 1, ['A', 0], false), // left
       makeItem('a1', ['A', 2], ['A', 0], null, 2), // right
 
       makeItem('b', ['B', 0], null, null, 0),
-      makeItem('b0', ['B', 1], null, ['B', 0], 1), // left
+      makeItem('b0', ['B', 1], null, ['B', 0], 1, ['B', 0], false), // left
       makeItem('b1', ['B', 2], ['B', 0], null, 2), // right
     ]
 
@@ -181,25 +179,11 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
   const withTails2 = () => {
     const ops = [
       makeItem('a', ['A', 0], null, null, 0),
-      makeItem('a0', ['A', 1], null, ['A', 0], 1), // left
+      makeItem('a0', ['A', 1], null, ['A', 0], 1, ['A', 0], false), // left
       makeItem('a1', ['A', 2], ['A', 0], null, 2), // right
 
       makeItem('b', ['B', 0], null, null, 0),
-      makeItem('b0', ['1', 0], null, ['B', 0], 1), // left
-      makeItem('b1', ['B', 1], ['B', 0], null, 2), // right
-    ]
-
-    integrateFuzz(ops, ['a0', 'a', 'a1', 'b0', 'b', 'b1'])
-  }
-
-  const withTails2Sync9 = () => {
-    const ops = [
-      makeItem('a', ['A', 0], null, null, 0),
-      makeItem('a0', ['A', 1], ['A', 0, false], ['A', 0], 1), // left
-      makeItem('a1', ['A', 2], ['A', 0, true], null, 2), // right
-
-      makeItem('b', ['B', 0], null, null, 0),
-      makeItem('b0', ['1', 0], ['B', 0, false], ['B', 0], 1), // left
+      makeItem('b0', ['1', 0], null, ['B', 0], 1, ['B', 0], false), // left
       makeItem('b1', ['B', 1], ['B', 0], null, 2), // right
     ]
 
@@ -313,10 +297,18 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
         const a = randDoc()
         const b = randDoc()
         if (a !== b) {
-          // console.log('merging', a.id, b.id, a.content, b.content)
+          // console.log('merging', a.agent, b.agent)
           mergeInto(alg, a, b)
           mergeInto(alg, b, a)
-          assert.deepStrictEqual(getArray(a), getArray(b))
+          try {
+            assert.deepStrictEqual(getArray(a), getArray(b))
+          } catch (e) {
+            console.log('\n')
+            alg.printDoc(a)
+            console.log('\n ---------------\n')
+            alg.printDoc(b)
+            throw e
+          }
         }
       }
     }
@@ -338,21 +330,20 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
     fuzzSequential,
     fuzzMultidoc
   ]
-  tests.forEach(test)
+  // tests.forEach(test)
   // interleavingBackwardSync9()
   // withTails2()
   // withTails2Sync9()
-  // fuzzSequential()
+  fuzzSequential()
   // fuzzMultidoc()
   // fuzzer1()
+  console.log('\n\n')
 }
 
 runTests('yjsmod', yjsMod)
 runTests('yjs', yjs)
 runTests('automerge', automerge)
-
-// For sync9 the IDs hardcoded in these tests are misleading.
-// runTests('sync9', sync9)
+runTests('sync9', sync9)
 
 // console.log('hits', hits, 'misses', misses)
 
