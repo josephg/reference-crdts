@@ -2,6 +2,7 @@ import zlib from 'zlib'
 import fs from 'fs'
 import {Algorithm, newDoc, localDelete, yjsMod, automerge, getArray, sync9} from './crdts'
 import assert from 'assert'
+// import v8 from 'v8'
 
 const bench = (algName: string, alg: Algorithm) => {
   // const filename = 'sveltecomponent'
@@ -13,6 +14,10 @@ const bench = (algName: string, alg: Algorithm) => {
   } = JSON.parse(zlib.gunzipSync(fs.readFileSync(`../crdt-benchmarks/${filename}.json.gz`)).toString())
 
   console.time(`${algName} ${filename}`)
+
+  // ;(globalThis as any).gc()
+  // const startMemory = v8.getHeapStatistics().used_heap_size
+
   const doc = newDoc()
 
   let i = 0
@@ -30,7 +35,10 @@ const bench = (algName: string, alg: Algorithm) => {
   }
   console.timeEnd(`${algName} ${filename}`)
 
+  // ;(globalThis as any).gc()
+  // console.log('RAM used:', v8.getHeapStatistics().used_heap_size - startMemory)
   assert.strictEqual(getArray(doc).join(''), endContent)
+  console.log(txns.length)
 }
 
 bench('yjs mod', yjsMod)

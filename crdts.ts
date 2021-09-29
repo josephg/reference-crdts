@@ -465,6 +465,33 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
   if (!newItem.isDeleted) doc.length += 1
 }
 
+// Same as integrateAutomerge above, but shorter.
+const integrateAutomergeSmol = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+  const {id: [agent, seq]} = newItem
+  const parent = findItem(doc, newItem.originLeft, idx_hint - 1)
+
+  // Scan to find the insert location
+  let i
+  for (i = parent + 1; i < doc.content.length; i++) {
+    let o = doc.content[i]
+    if (newItem.seq > o.seq) break // Optimization to avoid findItem call along the hot path
+    let oparent = findItem(doc, o.originLeft, idx_hint - 1)
+
+    // Should we insert here?
+    if (oparent < parent
+      || (oparent === parent
+        && (newItem.seq === o.seq)
+        && agent < o.id[0])
+    ) break
+  }
+
+  // We've found the position. Insert at position *i*.
+  doc.content.splice(i, 0, newItem)
+  doc.version[agent] = seq
+  doc.maxSeq = Math.max(doc.maxSeq, newItem.seq)
+  if (!newItem.isDeleted) doc.length += 1
+}
+
 const integrateSync9 = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const {id: [agent, seq]} = newItem
   const lastSeen = doc.version[agent] ?? -1
@@ -525,7 +552,9 @@ export const yjs: Algorithm = {
 
 export const automerge: Algorithm = {
   localInsert,
-  integrate: integrateAutomerge,
+  // The two integrate methods are equivalent.
+  // integrate: integrateAutomerge,
+  integrate: integrateAutomergeSmol,
   printDoc(doc) { printdoc(doc, true, false, false) },
 
   // Automerge doesn't handle these cases as I would expect.
@@ -543,15 +572,15 @@ export const printDebugStats = () => {
 
 
 // ;(() => {
-//   console.clear()
+//   // console.clear()
 
-//   const alg = sync9
+//   const alg = yjs
 
 //   let doc1 = newDoc()
 
 //   alg.localInsert(doc1, 'a', 0, 'x')
 //   alg.localInsert(doc1, 'a', 1, 'y')
-//   alg.localInsert(doc1, 'a', 0, 'z')
+//   alg.localInsert(doc1, 'a', 0, 'z') // zxy
 
 //   // alg.printDoc(doc1)
 
@@ -565,5 +594,5 @@ export const printDebugStats = () => {
 
 //   alg.printDoc(doc1)
 
-//   console.log('\n\n\n')
+//   // console.log('\n\n\n')
 // })()

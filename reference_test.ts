@@ -11,11 +11,6 @@ import * as sync9 from './sync9'
 
 type DocType = {arr: number[]}
 
-globalThis.console = new consoleLib.Console({
-  stdout: process.stdout, stderr: process.stderr,
-  inspectOptions: {depth: null}
-})
-
 const amInit = automerge.from<DocType>({arr: []})
 
 export enum Mode {
@@ -193,6 +188,11 @@ export class DocPair {
 }
 
 const randomizer = (mode: Mode) => {
+  globalThis.console = new consoleLib.Console({
+    stdout: process.stdout, stderr: process.stderr,
+    inspectOptions: {depth: null}
+  })
+
   for (let iter = 0; ; iter++) {
     if (iter % 20 === 0) console.log('iter', iter)
     // console.log('iter', iter)
