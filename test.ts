@@ -49,7 +49,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
 
     try {
       assert.deepStrictEqual(getArray(doc), expectedResult)
-    } catch(e) {
+    } catch(e: any) {
       console.log()
       alg.printDoc(doc)
       throw e
