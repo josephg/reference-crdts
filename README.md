@@ -41,6 +41,12 @@ I use ts-node to run the code in this project. After `npm install` / `yarn` you 
 npx ts-node test.ts
 ```
 
+## Contribution policy
+
+Note: This code base was created for science and learning. It is not built to be a load bearing part of your infrastructure.
+
+I have no intention of spending my time maintaining this code. If you want to make changes, please do so in a fork. I'm not interested in pull requests.
+
 
 # LICENSE
 
