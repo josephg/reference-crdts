@@ -1,3 +1,6 @@
+// This file implements 4 different list based CRDTs
+// (Yjs, Automerge, Sync9 and "YjsMod") in one implementation.
+
 import assert from 'assert'
 import consoleLib from 'console'
 import chalk from 'chalk'
