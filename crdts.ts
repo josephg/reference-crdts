@@ -189,21 +189,17 @@ function localInsertFugue<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: n
 
   const rightItem = doc.content[i]
 
+  const originLeft = doc.content[i - 1]?.id ?? null
   const originRight = rightItem?.id ?? null
-  const isRightChild = originRight != null && idEq(originRight, rightItem.originLeft)
 
-  // if (typeof content === 'number' && (content === 35 || content === 31)) {
-  //   console.log('or', content, originRight, 'rightleft', rightItem.originLeft, isRightChild ? 'right' : 'left')
-  //   debugger
-  // }
+  const rightParent = (originRight === null || !idEq(rightItem.originLeft, originLeft)) ? null : originRight
 
   this.integrate(doc, {
     content,
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
-    // originLeft: isLeftChild ? (doc.content[i - 1]?.id ?? null) : null,
-    originLeft: doc.content[i - 1]?.id ?? null,
-    originRight: isRightChild ? null : originRight,
+    originLeft,
+    originRight: rightParent,
     insertAfter: true, // Unused by fugue
     seq: doc.maxSeq + 1, // Unused by fugue
   }, i)
@@ -266,9 +262,9 @@ const printdoc = <T>(doc: Doc<T>, showSeq: boolean, showOR: boolean, showIsAfter
     let content = `${i.content == null
       ? '.'
       : i.isDeleted ? chalk.strikethrough(i.content) : chalk.yellow(i.content)
-    } at [${i.id}] (parent [${i.originLeft}])`
+    } at [${i.id}] (par/left [${i.originLeft}])`
     if (showSeq) content += ` seq ${i.seq}`
-    if (showOR) content += ` originRight [${i.originRight}]`
+    if (showOR) content += ` right [${i.originRight}]`
     if (showIsAfter) content += ` ${i.insertAfter ? 'after' : chalk.blue('before')}`
     // console.log(`${'| '.repeat(d)}${i.content == null ? chalk.strikethrough(content) : content}`)
     console.log(`${'| '.repeat(d)}${i.content == null ? chalk.grey(content) : content}`)

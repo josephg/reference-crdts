@@ -78,33 +78,7 @@ export class DocPair {
         break
       }
       case Mode.Fugue: {
-
-        // const runtime = new CRuntime({
-        //   autoTransactions: 'debugOp',
-        //   // debugReplicaID: amId
-        //   debugReplicaID: this.idStr
-        // })
-
-        // this.fugue = {
-        //   runtime,
-        //   list: runtime.registerCollab('doc', init => new CValueList(init))
-        // }
-
-        // const app = new collabs.CRDTApp({
-        //   batchingStrategy: new collabs.ManualBatchingStrategy,
-        //   debugReplicaID: this.idStr,
-        // })
-
-        // const messages: FugueMessage[] = []
-        // app.on('Send', (evt) => {
-        //   console.log('app', this.idStr, 'msg', evt.message)
-        //   // console.log('send', evt)
-        //   messages.push({src: this.idStr, msg: evt.message})
-        // })
-        // const list = app.registerCollab('doc', init => new ListFugueSimple<number>(init))
-        // app.load(collabs.Optional.empty())
-
-        // this.fugue = { app, list, messages }
+        this.fugue = new ListFugueSimple(this.idStr)
         break
       }
     }
@@ -255,8 +229,10 @@ export class DocPair {
         // for (let i = 0; i < fugueList.length; i++) {
         //   console.log(fugueList[i], this.fugue.list.totalOrder.decode(this.fugue.list.getPosition(i)))
         // }
-        console.log(log)
         this.algorithm.printDoc(this.sephdoc)
+        console.log('\n---fugue---')
+        this.fugue.debugPrint()
+        console.log(log)
         throw e
       }
     }
@@ -284,17 +260,19 @@ export class DocPair {
   }
 }
 
-const randomizer1 = (iterations: number, localMode: Mode, checkMode: Mode = localMode) => {
+const randomizer = (localMode: Mode, checkMode: Mode = localMode) => {
   globalThis.console = new consoleLib.Console({
     stdout: process.stdout, stderr: process.stderr,
     inspectOptions: {depth: null}
   })
 
-  for (let iter = 0; iter < iterations; iter++) {
-    // if (iter % 20 === 0) console.log('iter', iter)
+  const systemSeed = process.env['SEED'] ?? ''
+
+  for (let iter = 0; ; iter++) {
+    if (iter % 20 === 0) console.log('iter', iter)
     // console.log('iter', iter)
     // const random = seed(`bb ${iter}`)
-    const random = seed(`bb ${iter}`)
+    const random = seed(`${systemSeed} ${iter}`)
     const randInt = (n: number) => Math.floor(random() * n)
     const randBool = (weight: number = 0.5) => random() < weight
 
@@ -354,20 +332,12 @@ const randomizer1 = (iterations: number, localMode: Mode, checkMode: Mode = loca
   }
 }
 
-const randomizer = (localMode: Mode, checkMode: Mode = localMode) => {
-  for (let i = 0; ; i++) {
-    if (i % 20 === 0) console.log('i', i)
-    // console.log('i', i)
-    randomizer1(100, localMode, checkMode)
-  }
-}
-
-
 function runRandomizer() {
   // randomizer(Mode.YjsMod, Mode.Sync9)
   // randomizer(Mode.Automerge)
-  randomizer(Mode.Fugue)
-  // randomizer(Mode.Fugue, Mode.Sync9)
+  randomizer(Mode.Sync9, Mode.Fugue)
+  // randomizer(Mode.Sync9)
+  // randomizer(Mode.Fugue)
 
   // const docs = [new DocPair(0, Mode.Fugue), new DocPair(1, Mode.Fugue), new DocPair(2, Mode.Fugue)]
   // const [a, b, c] = docs

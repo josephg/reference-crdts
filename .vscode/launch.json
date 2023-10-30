@@ -20,11 +20,11 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "fugue",
+      "name": "trace",
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "program": "${workspaceFolder}/fugue.ts",
+      "program": "${workspaceFolder}/trace.ts",
       // "runtimeArgs": ["-r", "ts-node/register"],
       "outFiles": [
         "${workspaceFolder}/**/*.js"

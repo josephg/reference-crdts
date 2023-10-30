@@ -1,26 +1,18 @@
 // This is a port from the fugue repository Oct 2023
 // Commit 98c0c7a965276fb9a22237562f642a6ce8d8e03f
-// import {
-//   AbstractCListCPrimitive,
-//   InitToken,
-//   Message,
-//   MessageMeta,
-//   Optional
-// } from "@collabs/collabs";
-
-// const GZIP = false;
+import chalk from 'chalk'
 
 interface ID {
   sender: string;
   counter: number;
 }
 
-// const idEq = (a: ID | null | undefined, b: ID | null): boolean => (
-//   a == b || (
-//     a != null && b != null
-//     && a.sender === b.sender && a.counter === b.counter
-//   )
-// )
+const idEq = (a: ID | null | undefined, b: ID | null): boolean => (
+  a == b || (
+    a != null && b != null
+    && a.sender === b.sender && a.counter === b.counter
+  )
+)
 
 interface Element<T> {
   /** For the start & end, this is ("", 0) & ("", 1). */
@@ -330,7 +322,43 @@ export class ListFugueSimple<T> {
     this.load(save)
   }
 
-  canGC(): boolean {
-    return false;
+  debugPrint() {
+    // Walk the linked list.
+
+    const depth: Record<string, number> = {}
+    // const kForId = (id: Id, c: T | null) => `${id[0]} ${id[1]} ${id[2] ?? c != null}`
+    const eltId = (elt: Element<any>) => elt.id.sender === '' ? 'ROOT' : `${elt.id.sender},${elt.id.counter}`
+    depth[eltId(this.start)] = 0
+
+    for (
+      let elt: Element<T> | null = this.start;
+      (elt = elt.right);
+      elt !== null
+    ) {
+      // The only items with a null left / right are the roots.
+      if (elt.leftOrigin == null || elt.rightOrigin == null) continue
+
+      const isLeftChild = true
+      // const isLeftChild = this.rightParent(elt.leftOrigin, elt.rightOrigin) === this.end
+      const parent = isLeftChild ? elt.leftOrigin : elt.rightOrigin
+      const d = (parent === this.start || parent === this.end)
+        ? 0
+        : depth[eltId(parent)] + 1
+
+      depth[eltId(elt)] = d
+
+      // let content = `${isLeftChild ? '/' : '\\'}${elt.value == null
+      let content = `${elt.value == null
+        ? '.'
+        : elt.isDeleted ? chalk.strikethrough(elt.value) : chalk.yellow(elt.value)
+      } at [${eltId(elt)}] (left [${eltId(elt.leftOrigin)}])`
+      content += ` right [${eltId(elt.rightOrigin)}]`
+      content += ` rightParent ${eltId(this.rightParent(elt.leftOrigin, elt.rightOrigin))}`
+      // console.log(`${'| '.repeat(d)}${elt.value == null ? chalk.strikethrough(content) : content}`)
+      console.log(`${'| '.repeat(d)}${elt.value == null ? chalk.grey(content) : content}`)
+    }
+
+
+
   }
 }
