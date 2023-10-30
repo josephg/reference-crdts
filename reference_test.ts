@@ -16,6 +16,7 @@ const amInit = automerge.from<DocType>({arr: []})
 export enum Mode {
   Automerge,
   Yjs,
+  YjsMod,
   Sync9,
 }
 
@@ -32,19 +33,20 @@ export class DocPair {
   ydoc?: Y.Doc
   sync9?: any
 
-  constructor(id: number, mode: Mode) {
+  constructor(id: number, localMode: Mode, checkMode: Mode = localMode) {
     this.id = id
     this.idStr = 'abc'[id]
 
-    this.algorithm = mode === Mode.Automerge ? crdts.automerge
-      : mode === Mode.Yjs ? crdts.yjs
+    this.algorithm = localMode === Mode.Automerge ? crdts.automerge
+      : localMode === Mode.Yjs ? crdts.yjs
+      : localMode === Mode.YjsMod ? crdts.yjsMod
       : crdts.sync9
 
     this.sephdoc = crdts.newDoc()
 
     // this.am = automerge.from<DocType>({arr: []}, idStr)
     // this.am = automerge.from<DocType>(amInit, idStr)
-    switch (mode) {
+    switch (checkMode) {
       case Mode.Automerge: {
         // Automerge client ID strings must be valid hex strings, and the
         // concurrent item ordering is reversed from my algorithms here.
@@ -187,7 +189,7 @@ export class DocPair {
   }
 }
 
-const randomizer = (mode: Mode) => {
+const randomizer = (localMode: Mode, checkMode: Mode) => {
   globalThis.console = new consoleLib.Console({
     stdout: process.stdout, stderr: process.stderr,
     inspectOptions: {depth: null}
@@ -195,12 +197,12 @@ const randomizer = (mode: Mode) => {
 
   for (let iter = 0; ; iter++) {
     if (iter % 20 === 0) console.log('iter', iter)
-    // console.log('iter', iter)
+    console.log('iter', iter)
     const random = seed(`zz ${iter}`)
     const randInt = (n: number) => Math.floor(random() * n)
     const randBool = (weight: number = 0.5) => random() < weight
 
-    const docs = new Array(3).fill(null).map((_, i) => new DocPair(i, mode))
+    const docs = new Array(3).fill(null).map((_, i) => new DocPair(i, localMode, checkMode))
     // const docs = new Array(1).fill(null).map((_, i) => new DocPair(i, mode))
 
     log = ''
@@ -257,7 +259,5 @@ const randomizer = (mode: Mode) => {
 }
 
 if (require.main === module) {
-  randomizer(Mode.Automerge)
-  // randomizer(Mode.Yjs)
-  // randomizer(Mode.Sync9)
+  randomizer(Mode.YjsMod, Mode.Sync9)
 }
