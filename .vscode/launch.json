@@ -20,6 +20,19 @@
     {
       "type": "node",
       "request": "launch",
+      "name": "fugue",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "program": "${workspaceFolder}/fugue.ts",
+      // "runtimeArgs": ["-r", "ts-node/register"],
+      "outFiles": [
+        "${workspaceFolder}/**/*.js"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
       "name": "sync9",
       "skipFiles": [
         "<node_internals>/**"

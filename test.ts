@@ -1,7 +1,7 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9, Id, fugue} from './crdts'
-import * as rle from './rle'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9, Id, fugue} from './crdts.js'
+import * as rle from './rle.js'
 
 /// TESTS
 

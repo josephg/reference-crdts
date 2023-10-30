@@ -1,6 +1,6 @@
 import zlib from 'zlib'
 import fs from 'fs'
-import {Algorithm, newDoc, localDelete, yjsMod, automerge, getArray, sync9} from './crdts'
+import {Algorithm, newDoc, localDelete, yjsMod, automerge, getArray, sync9} from './crdts.js'
 import assert from 'assert'
 // import v8 from 'v8'
 
