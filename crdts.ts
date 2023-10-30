@@ -190,16 +190,21 @@ function localInsertFugue<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: n
   const rightItem = doc.content[i]
 
   const originLeft = doc.content[i - 1]?.id ?? null
-  const originRight = rightItem?.id ?? null
 
-  const rightParent = (originRight === null || !idEq(rightItem.originLeft, originLeft)) ? null : originRight
+  // This is fugue's special sauce - and the only line that differs from yjsmod. We null out the
+  // originRight when right.originLeft != originLeft when generating the item. This choice
+  // is the equivalent to deciding if an item is a "left child" or "right child" in fugue-tree,
+  // where originRight = null for right children. (In left children, originRight is the tree parent).
+  const originRight = rightItem != null && idEq(rightItem.originLeft, originLeft)
+    ? rightItem.id
+    : null
 
   this.integrate(doc, {
     content,
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
     originLeft,
-    originRight: rightParent,
+    originRight,
     insertAfter: true, // Unused by fugue
     seq: doc.maxSeq + 1, // Unused by fugue
   }, i)

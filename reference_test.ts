@@ -335,8 +335,9 @@ const randomizer = (localMode: Mode, checkMode: Mode = localMode) => {
 function runRandomizer() {
   // randomizer(Mode.YjsMod, Mode.Sync9)
   // randomizer(Mode.Automerge)
-  randomizer(Mode.Sync9, Mode.Fugue)
+  // randomizer(Mode.Sync9, Mode.Fugue)
   // randomizer(Mode.Sync9)
+  randomizer(Mode.Sync9, Mode.Fugue)
   // randomizer(Mode.Fugue)
 
   // const docs = [new DocPair(0, Mode.Fugue), new DocPair(1, Mode.Fugue), new DocPair(2, Mode.Fugue)]
