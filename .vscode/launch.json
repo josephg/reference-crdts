@@ -7,12 +7,12 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Launch Program",
+      "name": "reference_test",
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "program": "${workspaceFolder}/test.ts",
-      "runtimeArgs": ["-r", "ts-node/register"],
+      "program": "${workspaceFolder}/reference_test.ts",
+      // "runtimeArgs": ["-r", "ts-node/register"],
       "outFiles": [
         "${workspaceFolder}/**/*.js"
       ]

@@ -1,6 +1,6 @@
 import assert from 'assert'
 import seed from 'seed-random'
-import {Item, Algorithm, newDoc, canInsertNow, getArray, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9, Id} from './crdts'
+import {Item, Algorithm, newDoc, canInsertNow, getArray, mergeInto, localDelete, Doc, yjsMod, automerge, yjs, printDebugStats, sync9, Id, fugue} from './crdts'
 import * as rle from './rle'
 
 /// TESTS
@@ -344,6 +344,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
   console.log('\n\n')
 }
 
+runTests('fugue', fugue)
 runTests('yjsmod', yjsMod)
 runTests('yjs', yjs)
 runTests('automerge', automerge)

@@ -106,6 +106,7 @@ const idEq = (a: Id | null, b: Id | null): boolean => (
 let hits = 0
 let misses = 0
 
+// Returns the index of the item with the specified Id, or -1.
 // idx_hint is a small optimization so when we know the general area of
 // an item, we search nearby instead of just scanning the whole document.
 const findItem2 = <T>(doc: Doc<T>, needle: Id | null, atEnd: boolean = false, idx_hint: number = -1): number => {
@@ -176,9 +177,35 @@ function localInsert<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number
     id: [agent, (doc.version[agent] ?? -1) + 1],
     isDeleted: false,
     originLeft: doc.content[i - 1]?.id ?? null,
-    originRight: doc.content[i]?.id ?? null, // Only for yjs
-    insertAfter: true, // Unused by yjs and AM.
-    seq: doc.maxSeq + 1, // Only for AM.
+    originRight: doc.content[i]?.id ?? null, // Only for yjs, yjsmod
+    insertAfter: true, // Unused by yjs and rga
+    seq: doc.maxSeq + 1, // Only for rga.
+  }, i)
+}
+
+function localInsertFugue<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) {
+  // We're going to strictly only set originLeft or originRight.
+  let i = findItemAtPos(doc, pos)
+
+  const rightItem = doc.content[i]
+
+  const originRight = rightItem?.id ?? null
+  const isRightChild = originRight != null && idEq(originRight, rightItem.originLeft)
+
+  // if (typeof content === 'number' && (content === 35 || content === 31)) {
+  //   console.log('or', content, originRight, 'rightleft', rightItem.originLeft, isRightChild ? 'right' : 'left')
+  //   debugger
+  // }
+
+  this.integrate(doc, {
+    content,
+    id: [agent, (doc.version[agent] ?? -1) + 1],
+    isDeleted: false,
+    // originLeft: isLeftChild ? (doc.content[i - 1]?.id ?? null) : null,
+    originLeft: doc.content[i - 1]?.id ?? null,
+    originRight: isRightChild ? null : originRight,
+    insertAfter: true, // Unused by fugue
+    seq: doc.maxSeq + 1, // Unused by fugue
   }, i)
 }
 
@@ -401,7 +428,8 @@ const integrateYjs = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) =
   if (!newItem.isDeleted) doc.length += 1
 }
 
-const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+// Integration method for the RGA algorthm, used in Automerge.
+const integrateRGA = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const {id} = newItem
   assert(newItem.seq >= 0)
 
@@ -468,8 +496,8 @@ const integrateAutomerge = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number =
   if (!newItem.isDeleted) doc.length += 1
 }
 
-// Same as integrateAutomerge above, but shorter.
-const integrateAutomergeSmol = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+// Same as integrateRGA above, but shorter.
+const integrateRGASmol = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const {id: [agent, seq]} = newItem
   const parent = findItem(doc, newItem.originLeft, idx_hint - 1)
 
@@ -545,6 +573,12 @@ export const yjsMod: Algorithm = {
   printDoc(doc) { printdoc(doc, false, true, false) },
 }
 
+export const fugue: Algorithm = {
+  localInsert: localInsertFugue,
+  integrate: integrateYjsMod,
+  printDoc(doc) { printdoc(doc, false, true, false) },
+}
+
 export const yjs: Algorithm = {
   localInsert,
   integrate: integrateYjs,
@@ -557,7 +591,7 @@ export const automerge: Algorithm = {
   localInsert,
   // The two integrate methods are equivalent.
   // integrate: integrateAutomerge,
-  integrate: integrateAutomergeSmol,
+  integrate: integrateRGASmol,
   printDoc(doc) { printdoc(doc, true, false, false) },
 
   // Automerge doesn't handle these cases as I would expect.

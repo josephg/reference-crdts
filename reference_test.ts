@@ -8,6 +8,7 @@ import seed from 'seed-random'
 import consoleLib from 'console'
 import * as crdts from './crdts'
 import * as sync9 from './sync9'
+import {CRuntime, CValueList} from '@collabs/collabs'
 
 type DocType = {arr: number[]}
 
@@ -18,6 +19,7 @@ export enum Mode {
   Yjs,
   YjsMod,
   Sync9,
+  Fugue,
 }
 
 let log = ''
@@ -32,6 +34,10 @@ export class DocPair {
   am?: automerge.Doc<DocType>
   ydoc?: Y.Doc
   sync9?: any
+  fugue?: {
+    runtime: CRuntime,
+    list: CValueList<number>
+  }
 
   constructor(id: number, localMode: Mode, checkMode: Mode = localMode) {
     this.id = id
@@ -40,6 +46,7 @@ export class DocPair {
     this.algorithm = localMode === Mode.Automerge ? crdts.automerge
       : localMode === Mode.Yjs ? crdts.yjs
       : localMode === Mode.YjsMod ? crdts.yjsMod
+      : localMode === Mode.Fugue ? crdts.fugue
       : crdts.sync9
 
     this.sephdoc = crdts.newDoc()
@@ -64,6 +71,25 @@ export class DocPair {
         this.sync9 = sync9.make(this.idStr)
         break
       }
+      case Mode.Fugue: {
+        // const amId = Buffer.from([255 - id]).toString('hex')
+
+        // console.log('id', this.idStr, 'amId', amId)
+
+        // const idStr2 = 'abc'[id]
+
+        const runtime = new CRuntime({
+          autoTransactions: 'debugOp',
+          // debugReplicaID: amId
+          debugReplicaID: this.idStr
+        })
+
+        this.fugue = {
+          runtime,
+          list: runtime.registerCollab('doc', init => new CValueList(init))
+        }
+        break
+      }
     }
   }
 
@@ -83,6 +109,18 @@ export class DocPair {
 
     if (this.sync9 != null) {
       sync9.insert(this.sync9, pos, content)
+    }
+
+    if (this.fugue != null) {
+      if (content === 31 || content === 35) debugger
+      this.fugue.list.insert(pos, content)
+
+      console.log('insert', 'pos', pos, 'content', content, 'agent', this.idStr)
+      const fugueList = this.fugue.list.slice()
+      console.log('fugue', fugueList)
+      for (let i = 0; i < fugueList.length; i++) {
+        console.log(`  ${i}: ${fugueList[i]}   pos: ${this.fugue.list.getPosition(i)}`)
+      }
     }
   }
 
@@ -133,6 +171,11 @@ export class DocPair {
       this.sync9 = sync9.merge(this.sync9, other.sync9)
     }
 
+    if (this.fugue != null) {
+      const data = other.fugue!.runtime.save()
+      this.fugue.runtime.load(data)
+    }
+
     this.check()
     // console.log('->', this.content)
   }
@@ -168,10 +211,33 @@ export class DocPair {
       }
     }
 
+    if (this.fugue != null) {
+      try {
+        assert.deepStrictEqual(myContent, this.fugue.list.slice())
+      } catch (e) {
+        console.log('fugue waypoints', this.fugue!.list.totalOrder.rootWaypoint)
+        console.log('local', this.sephdoc.content)
+
+        const fugueList = this.fugue.list.slice()
+        console.log('fugue', fugueList)
+        for (let i = 0; i < fugueList.length; i++) {
+          console.log(`  ${i}: ${fugueList[i]}   pos: ${this.fugue.list.getPosition(i)}`)
+        }
+        for (let i = 0; i < fugueList.length; i++) {
+          console.log(fugueList[i], this.fugue.list.totalOrder.decode(this.fugue.list.getPosition(i)))
+        }
+        console.log(log)
+        this.algorithm.printDoc(this.sephdoc)
+        throw e
+      }
+    }
+
     // console.log('result', this.ydoc?.getArray().toArray())
   }
 
   checkEq(other: DocPair) {
+    // console.log('x', this.fugue?.list.slice())
+    // console.log('y', other.fugue?.list.slice())
     this.check()
     other.check()
     assert.deepEqual(this.content, other.content)
@@ -189,7 +255,7 @@ export class DocPair {
   }
 }
 
-const randomizer = (localMode: Mode, checkMode: Mode) => {
+const randomizer = (localMode: Mode, checkMode: Mode = localMode) => {
   globalThis.console = new consoleLib.Console({
     stdout: process.stdout, stderr: process.stderr,
     inspectOptions: {depth: null}
@@ -197,8 +263,9 @@ const randomizer = (localMode: Mode, checkMode: Mode) => {
 
   for (let iter = 0; ; iter++) {
     if (iter % 20 === 0) console.log('iter', iter)
-    console.log('iter', iter)
-    const random = seed(`zz ${iter}`)
+    // console.log('iter', iter)
+    // const random = seed(`bb ${iter}`)
+    const random = seed(`bb ${iter}`)
     const randInt = (n: number) => Math.floor(random() * n)
     const randBool = (weight: number = 0.5) => random() < weight
 
@@ -259,5 +326,20 @@ const randomizer = (localMode: Mode, checkMode: Mode) => {
 }
 
 if (require.main === module) {
-  randomizer(Mode.YjsMod, Mode.Sync9)
+  // randomizer(Mode.YjsMod, Mode.Sync9)
+  // randomizer(Mode.Automerge)
+  // randomizer(Mode.Fugue)
+  randomizer(Mode.Fugue, Mode.Sync9)
+  // randomizer(Mode.Fugue, Mode.Fugue)
+
+  // const docs = [new DocPair(0, Mode.Fugue), new DocPair(1, Mode.Fugue), new DocPair(2, Mode.Fugue)]
+  // const [a, b, c] = docs
+
+  // const merge = (a: DocPair, b: DocPair) => { a.merge(b) }
+
+  // b.insert(0, 1)
+  // merge(a, b)
+  // a.insert(1, 2)
+  // b.insert(1, 3)
+  // merge(b, a)
 }

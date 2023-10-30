@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@automerge/automerge": "^2.1.6",
+    "@collabs/collabs": "^0.13.4",
     "@types/chalk": "^2.2.0",
     "@types/node": "^18.11.18",
     "chalk": "^4.1.1",
