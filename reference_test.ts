@@ -2,7 +2,7 @@
 // real implementations in yjs and automerge.
 
 import * as Y from 'yjs'
-import * as automerge from 'automerge'
+import * as automerge from '@automerge/automerge'
 import assert from 'assert/strict'
 import seed from 'seed-random'
 import consoleLib from 'console'
@@ -28,7 +28,7 @@ export class DocPair {
   algorithm: crdts.Algorithm
   sephdoc: crdts.Doc<number>
 
-  am?: automerge.FreezeObject<DocType>
+  am?: automerge.Doc<DocType>
   ydoc?: Y.Doc
   sync9?: any
 
@@ -88,17 +88,17 @@ export class DocPair {
     // I haven't added delete support to the merge() function in crdts.
     throw Error('NYI')
 
-    crdts.localDelete(this.sephdoc, this.idStr, pos)
+    // crdts.localDelete(this.sephdoc, this.idStr, pos)
 
-    this.ydoc?.getArray().delete(pos, 1)
+    // this.ydoc?.getArray().delete(pos, 1)
 
-    if (this.am != null) {
-      this.am = automerge.change(this.am, d => {
-        d.arr.splice(pos, 1)
-      })
-    }
+    // if (this.am != null) {
+    //   this.am = automerge.change(this.am, d => {
+    //     d.arr.splice(pos, 1)
+    //   })
+    // }
 
-    if (this.sync9) throw Error('nyi')
+    // if (this.sync9) throw Error('nyi')
   }
 
   mergeFrom(other: DocPair) {
@@ -257,7 +257,7 @@ const randomizer = (mode: Mode) => {
 }
 
 if (require.main === module) {
-  // randomizer(Mode.Automerge)
+  randomizer(Mode.Automerge)
   // randomizer(Mode.Yjs)
-  randomizer(Mode.Sync9)
+  // randomizer(Mode.Sync9)
 }

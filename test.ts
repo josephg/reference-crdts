@@ -77,7 +77,7 @@ const runTests = (algName: string, alg: Algorithm) => { // Separate scope for na
       try {
         fn()
         process.stdout.write(`PASS\n`)
-      } catch (e) {
+      } catch (e: any) {
         process.stdout.write(`FAIL:\n`)
         console.log(e.stack)
         errored = true
