@@ -45,15 +45,18 @@ export class DocPair {
   // }
   fugue?: ListFugueSimple<number>
 
-  constructor(id: number, localMode: Mode, checkMode: Mode = localMode) {
+  constructor(id: number, localMode: Mode, checkMode: Mode | null = localMode) {
     this.id = id
     this.idStr = 'abc'[id]
 
-    this.algorithm = localMode === Mode.Automerge ? crdts.automerge
-      : localMode === Mode.Yjs ? crdts.yjs
-      : localMode === Mode.YjsMod ? crdts.yjsMod
-      : localMode === Mode.Fugue ? crdts.fugue
-      : crdts.sync9
+    this.algorithm = {
+      [Mode.Automerge]: crdts.automerge,
+      [Mode.Yjs]: crdts.yjs,
+      [Mode.YjsMod]: crdts.yjsMod,
+      [Mode.Fugue]: crdts.fugue,
+      [Mode.Sync9]: crdts.sync9,
+    }[localMode]
+    if (this.algorithm == null) throw Error('Unknown algorithm: ' + localMode)
 
     this.sephdoc = crdts.newDoc()
 
@@ -260,7 +263,7 @@ export class DocPair {
   }
 }
 
-const randomizer = (localMode: Mode, checkMode: Mode = localMode) => {
+const randomizer = (localMode: Mode, checkMode: (Mode | null) = localMode) => {
   globalThis.console = new consoleLib.Console({
     stdout: process.stdout, stderr: process.stderr,
     inspectOptions: {depth: null}
@@ -268,6 +271,7 @@ const randomizer = (localMode: Mode, checkMode: Mode = localMode) => {
 
   const systemSeed = process.env['SEED'] ?? ''
 
+  // for (let iter = 0; iter < 1000; iter++) {
   for (let iter = 0; ; iter++) {
     if (iter % 20 === 0) console.log('iter', iter)
     // console.log('iter', iter)
@@ -337,8 +341,10 @@ function runRandomizer() {
   // randomizer(Mode.Automerge)
   // randomizer(Mode.Sync9, Mode.Fugue)
   // randomizer(Mode.Sync9)
-  randomizer(Mode.Sync9, Mode.Fugue)
-  // randomizer(Mode.Fugue)
+  // randomizer(Mode.Sync9, Mode.Fugue)
+  randomizer(Mode.Fugue)
+  // randomizer(Mode.YjsMod, Mode.Fugue)
+  // console.log('iters', crdts.iters)
 
   // const docs = [new DocPair(0, Mode.Fugue), new DocPair(1, Mode.Fugue), new DocPair(2, Mode.Fugue)]
   // const [a, b, c] = docs

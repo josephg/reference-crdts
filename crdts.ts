@@ -14,7 +14,7 @@ globalThis.console = new consoleLib.Console({
 export type Id = [agent: string, seq: number]
 export type Version = Record<string, number> // Last seen seq for each agent.
 
-export let iters = 0
+// export let iters = 0
 
 export type Algorithm = {
   localInsert: <T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => void
@@ -185,33 +185,6 @@ function localInsert<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number
   }, i)
 }
 
-function localInsertFugue<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) {
-  // We're going to strictly only set originLeft or originRight.
-  let i = findItemAtPos(doc, pos)
-
-  const rightItem = doc.content[i]
-
-  const originLeft = doc.content[i - 1]?.id ?? null
-
-  // This is fugue's special sauce - and the only line that differs from yjsmod. We null out the
-  // originRight when right.originLeft != originLeft when generating the item. This choice
-  // is the equivalent to deciding if an item is a "left child" or "right child" in fugue-tree,
-  // where originRight = null for right children. (In left children, originRight is the tree parent).
-  const originRight = rightItem != null && idEq(rightItem.originLeft, originLeft)
-    ? rightItem.id
-    : null
-
-  this.integrate(doc, {
-    content,
-    id: [agent, (doc.version[agent] ?? -1) + 1],
-    isDeleted: false,
-    originLeft,
-    originRight,
-    insertAfter: true, // Unused by fugue
-    seq: doc.maxSeq + 1, // Unused by fugue
-  }, i)
-}
-
 function localInsertSync9<T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) {
   let i = findItemAtPos(doc, pos, true)
   // For sync9 our insertion point is different based on whether or not our parent has children.
@@ -330,59 +303,37 @@ const integrateFugue = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1)
 
   const endIdx = doc.content.length
 
-  let leftIdx = findItem(doc, newItem.originLeft, idx_hint - 1)
-  let destIdx = leftIdx + 1
-  let rightIdx = newItem.originRight == null ? endIdx : findItem(doc, newItem.originRight, idx_hint)
-  const right = doc.content[rightIdx]
   let scanning = false
 
-  const rightParentIdx = right == null || !idEq(right.originLeft, newItem.originLeft) ? endIdx : rightIdx
+  const leftIdx = findItem(doc, newItem.originLeft, idx_hint - 1)
+  let destIdx = leftIdx + 1
+
+  const getRightParentIdx = (item: Item<T>): number => {
+    const rightIdx = item.originRight == null ? endIdx : findItem(doc, item.originRight, idx_hint)
+    const right = doc.content[rightIdx] // Might be null if rightIdx is endIdx.
+    return right == null || !idEq(right.originLeft, item.originLeft) ? endIdx : rightIdx
+  }
+
+  // const rightParentIdx = getRightParentIdx(rightIdx, newItem.originLeft)
+  const rightPIdx = getRightParentIdx(newItem)
 
   for (let i = destIdx; ; i++) {
-    // Inserting at the end of the document. Just insert.
     if (!scanning) destIdx = i
-    if (i === endIdx) break
-    if (i === rightIdx) break // No ambiguity / concurrency. Insert here.
+    if (i === endIdx) break // Hit the end of the document
 
     let other = doc.content[i]
+    if (idEq(other.id, newItem.originRight)) break // Hit originRight
+
+    // iters++
 
     let oleftIdx = findItem(doc, other.originLeft, idx_hint - 1)
-    let orightIdx = other.originRight == null ? endIdx : findItem(doc, other.originRight, idx_hint)
+    const orightPIdx = getRightParentIdx(other)
 
-    const oRight = doc.content[orightIdx]
-    const orightParentIdx = oRight == null || !idEq(oRight.originLeft, other.originLeft) ? endIdx : orightIdx
-
-    iters++
-
-    // The logic below summarizes to:
-    // if (oleft < left || (oleft === left && oright === right && newItem.id[0] < o.id[0])) break
-    // if (oleft === left) scanning = oright < right
-
-    // Ok now we implement the punnet square of behaviour
-    if (oleftIdx < leftIdx) {
-      // Top row. Insert, insert, arbitrary (insert)
-      break
-    } else if (oleftIdx === leftIdx) {
-      // Middle row.
-      if (orightParentIdx < rightParentIdx) {
-        // This is tricky. We're looking at an item we *might* insert after - but we can't tell yet!
-        scanning = true
-        continue
-      } else if (orightParentIdx === rightParentIdx) {
-        // Raw conflict. Order based on user agents.
-        if (newItem.id[0] < other.id[0]) break
-        else {
-          scanning = false
-          continue
-        }
-      } else { // oright > right
-        scanning = false
-        continue
-      }
-    } else { // oleft > left
-      // Bottom row. Arbitrary (skip), skip, skip
-      continue
-    }
+    // This is identical to the logic in YjsMod below, but summarized and using parent idx instead of
+    // rightIdx.
+    if (oleftIdx < leftIdx
+      || (oleftIdx === leftIdx && orightPIdx === rightPIdx && newItem.id[0] < other.id[0])) break
+    if (oleftIdx === leftIdx) scanning = orightPIdx < rightPIdx
   }
 
   // We've found the position. Insert here.
@@ -407,8 +358,6 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
     if (!scanning) destIdx = i
     if (i === doc.content.length) break
     if (i === right) break // No ambiguity / concurrency. Insert here.
-
-    iters++
 
     let other = doc.content[i]
 
@@ -643,12 +592,6 @@ export const sync9: Algorithm = {
 
 export const yjsMod: Algorithm = {
   localInsert,
-  integrate: integrateYjsMod,
-  printDoc(doc) { printdoc(doc, false, true, false) },
-}
-
-export const fugueX: Algorithm = {
-  localInsert: localInsertFugue,
   integrate: integrateYjsMod,
   printDoc(doc) { printdoc(doc, false, true, false) },
 }
