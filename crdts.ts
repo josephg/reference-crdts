@@ -14,6 +14,8 @@ globalThis.console = new consoleLib.Console({
 export type Id = [agent: string, seq: number]
 export type Version = Record<string, number> // Last seen seq for each agent.
 
+export let iters = 0
+
 export type Algorithm = {
   localInsert: <T>(this: Algorithm, doc: Doc<T>, agent: string, pos: number, content: T) => void
   integrate: <T>(doc: Doc<T>, newItem: Item<T>, idx_hint?: number) => void
@@ -321,6 +323,75 @@ export const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) =>
 
 // This is a slight modification of yjs with a few tweaks to make some
 // of the CRDT puzzles resolve better.
+const integrateFugue = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+  const lastSeen = doc.version[newItem.id[0]] ?? -1
+  if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
+  doc.version[newItem.id[0]] = newItem.id[1]
+
+  const endIdx = doc.content.length
+
+  let leftIdx = findItem(doc, newItem.originLeft, idx_hint - 1)
+  let destIdx = leftIdx + 1
+  let rightIdx = newItem.originRight == null ? endIdx : findItem(doc, newItem.originRight, idx_hint)
+  const right = doc.content[rightIdx]
+  let scanning = false
+
+  const rightParentIdx = right == null || !idEq(right.originLeft, newItem.originLeft) ? endIdx : rightIdx
+
+  for (let i = destIdx; ; i++) {
+    // Inserting at the end of the document. Just insert.
+    if (!scanning) destIdx = i
+    if (i === endIdx) break
+    if (i === rightIdx) break // No ambiguity / concurrency. Insert here.
+
+    let other = doc.content[i]
+
+    let oleftIdx = findItem(doc, other.originLeft, idx_hint - 1)
+    let orightIdx = other.originRight == null ? endIdx : findItem(doc, other.originRight, idx_hint)
+
+    const oRight = doc.content[orightIdx]
+    const orightParentIdx = oRight == null || !idEq(oRight.originLeft, other.originLeft) ? endIdx : orightIdx
+
+    iters++
+
+    // The logic below summarizes to:
+    // if (oleft < left || (oleft === left && oright === right && newItem.id[0] < o.id[0])) break
+    // if (oleft === left) scanning = oright < right
+
+    // Ok now we implement the punnet square of behaviour
+    if (oleftIdx < leftIdx) {
+      // Top row. Insert, insert, arbitrary (insert)
+      break
+    } else if (oleftIdx === leftIdx) {
+      // Middle row.
+      if (orightParentIdx < rightParentIdx) {
+        // This is tricky. We're looking at an item we *might* insert after - but we can't tell yet!
+        scanning = true
+        continue
+      } else if (orightParentIdx === rightParentIdx) {
+        // Raw conflict. Order based on user agents.
+        if (newItem.id[0] < other.id[0]) break
+        else {
+          scanning = false
+          continue
+        }
+      } else { // oright > right
+        scanning = false
+        continue
+      }
+    } else { // oleft > left
+      // Bottom row. Arbitrary (skip), skip, skip
+      continue
+    }
+  }
+
+  // We've found the position. Insert here.
+  doc.content.splice(destIdx, 0, newItem)
+  if (!newItem.isDeleted) doc.length += 1
+}
+
+// This is a slight modification of yjs with a few tweaks to make some
+// of the CRDT puzzles resolve better.
 const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const lastSeen = doc.version[newItem.id[0]] ?? -1
   if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
@@ -336,6 +407,8 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
     if (!scanning) destIdx = i
     if (i === doc.content.length) break
     if (i === right) break // No ambiguity / concurrency. Insert here.
+
+    iters++
 
     let other = doc.content[i]
 
@@ -574,9 +647,15 @@ export const yjsMod: Algorithm = {
   printDoc(doc) { printdoc(doc, false, true, false) },
 }
 
-export const fugue: Algorithm = {
+export const fugueX: Algorithm = {
   localInsert: localInsertFugue,
   integrate: integrateYjsMod,
+  printDoc(doc) { printdoc(doc, false, true, false) },
+}
+
+export const fugue: Algorithm = {
+  localInsert,
+  integrate: integrateFugue,
   printDoc(doc) { printdoc(doc, false, true, false) },
 }
 
