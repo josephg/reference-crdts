@@ -1,6 +1,5 @@
 // This is a port from the fugue repository Oct 2023
 // Commit 98c0c7a965276fb9a22237562f642a6ce8d8e03f
-import chalk from 'chalk'
 
 interface ID {
   sender: string;
@@ -350,12 +349,13 @@ export class ListFugueSimple<T> {
       // let content = `${isLeftChild ? '/' : '\\'}${elt.value == null
       let content = `${elt.value == null
         ? '.'
-        : elt.isDeleted ? chalk.strikethrough(elt.value) : chalk.yellow(elt.value)
+        // : elt.isDeleted ? chalk.strikethrough(elt.value) : chalk.yellow(elt.value)
+        : elt.value
       } at [${eltId(elt)}] (left [${eltId(elt.leftOrigin)}])`
       content += ` right [${eltId(elt.rightOrigin)}]`
       content += ` rightParent ${eltId(this.rightParent(elt.leftOrigin, elt.rightOrigin))}`
       // console.log(`${'| '.repeat(d)}${elt.value == null ? chalk.strikethrough(content) : content}`)
-      console.log(`${'| '.repeat(d)}${elt.value == null ? chalk.grey(content) : content}`)
+      console.log(`${'| '.repeat(d)}${elt.value == null ? content : content}`)
     }
 
 
