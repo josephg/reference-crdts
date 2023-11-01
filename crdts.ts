@@ -296,53 +296,6 @@ export const mergeInto = <T>(algorithm: Algorithm, dest: Doc<T>, src: Doc<T>) =>
 
 // This is a slight modification of yjs with a few tweaks to make some
 // of the CRDT puzzles resolve better.
-const integrateFugue = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
-  const lastSeen = doc.version[newItem.id[0]] ?? -1
-  if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
-  doc.version[newItem.id[0]] = newItem.id[1]
-
-  const endIdx = doc.content.length
-
-  let scanning = false
-
-  const leftIdx = findItem(doc, newItem.originLeft, idx_hint - 1)
-  let destIdx = leftIdx + 1
-
-  const getRightParentIdx = (item: Item<T>): number => {
-    const rightIdx = item.originRight == null ? endIdx : findItem(doc, item.originRight, idx_hint)
-    const right = doc.content[rightIdx] // Might be null if rightIdx is endIdx.
-    return right == null || !idEq(right.originLeft, item.originLeft) ? endIdx : rightIdx
-  }
-
-  // const rightParentIdx = getRightParentIdx(rightIdx, newItem.originLeft)
-  const rightPIdx = getRightParentIdx(newItem)
-
-  for (let i = destIdx; ; i++) {
-    if (!scanning) destIdx = i
-    if (i === endIdx) break // Hit the end of the document
-
-    let other = doc.content[i]
-    if (idEq(other.id, newItem.originRight)) break // Hit originRight
-
-    // iters++
-
-    let oleftIdx = findItem(doc, other.originLeft, idx_hint - 1)
-    const orightPIdx = getRightParentIdx(other)
-
-    // This is identical to the logic in YjsMod below, but summarized and using parent idx instead of
-    // rightIdx.
-    if (oleftIdx < leftIdx
-      || (oleftIdx === leftIdx && orightPIdx === rightPIdx && newItem.id[0] < other.id[0])) break
-    if (oleftIdx === leftIdx) scanning = orightPIdx < rightPIdx
-  }
-
-  // We've found the position. Insert here.
-  doc.content.splice(destIdx, 0, newItem)
-  if (!newItem.isDeleted) doc.length += 1
-}
-
-// This is a slight modification of yjs with a few tweaks to make some
-// of the CRDT puzzles resolve better.
 const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
   const lastSeen = doc.version[newItem.id[0]] ?? -1
   if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
@@ -393,6 +346,55 @@ const integrateYjsMod = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1
       // Bottom row. Arbitrary (skip), skip, skip
       continue
     }
+  }
+
+  // We've found the position. Insert here.
+  doc.content.splice(destIdx, 0, newItem)
+  if (!newItem.isDeleted) doc.length += 1
+}
+
+// This implements the fugue algorithm listed here:
+// https://arxiv.org/abs/2305.00583 .
+//
+// Merging behaviour turns out to be identical to sync9.
+// This code is heavily based on yjsmod. The only difference is using getRightParentIdx instead
+// of simply searching for originRight.
+const integrateFugue = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1) => {
+  const lastSeen = doc.version[newItem.id[0]] ?? -1
+  if (newItem.id[1] !== lastSeen + 1) throw Error('Operations out of order')
+  doc.version[newItem.id[0]] = newItem.id[1]
+
+  const endIdx = doc.content.length
+
+  let scanning = false
+
+  const leftIdx = findItem(doc, newItem.originLeft, idx_hint - 1)
+  let destIdx = leftIdx + 1
+
+  const getRightParentIdx = (item: Item<T>): number => {
+    const rightIdx = item.originRight == null ? endIdx : findItem(doc, item.originRight, idx_hint)
+    const right = doc.content[rightIdx] // Might be null if rightIdx is endIdx.
+    return right == null || !idEq(right.originLeft, item.originLeft) ? endIdx : rightIdx
+  }
+
+  // const rightParentIdx = getRightParentIdx(rightIdx, newItem.originLeft)
+  const rightPIdx = getRightParentIdx(newItem)
+
+  for (let i = destIdx; ; i++) {
+    if (!scanning) destIdx = i
+    if (i === endIdx) break // Hit the end of the document
+
+    let other = doc.content[i]
+    if (idEq(other.id, newItem.originRight)) break // Hit originRight
+
+    let oleftIdx = findItem(doc, other.originLeft, idx_hint - 1)
+    const orightPIdx = getRightParentIdx(other)
+
+    // This is identical to the logic in YjsMod, but summarized and using parent idx instead of
+    // rightIdx.
+    if (oleftIdx < leftIdx
+      || (oleftIdx === leftIdx && orightPIdx === rightPIdx && newItem.id[0] < other.id[0])) break
+    if (oleftIdx === leftIdx) scanning = orightPIdx < rightPIdx
   }
 
   // We've found the position. Insert here.
