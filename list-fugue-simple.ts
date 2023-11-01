@@ -159,7 +159,7 @@ export class ListFugueSimple<T> {
           bySender = [];
           this.elementsByID.set(msg.id.sender, bySender);
         }
-        bySender.push(elt);
+        bySender[msg.id.counter] = elt;
 
         this._length++;
 
