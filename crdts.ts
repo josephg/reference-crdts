@@ -604,6 +604,14 @@ export const fugue: Algorithm = {
   printDoc(doc) { printdoc(doc, false, true, false) },
 }
 
+export const fugueMax: Algorithm = {
+  localInsert,
+  // It'd be nice to have a FugueMax integration function here.
+  // But validation against fugue-max-simple.ts shows its identical to yjsmod.
+  integrate: integrateYjsMod,
+  printDoc(doc) { printdoc(doc, false, true, false) },
+}
+
 export const yjs: Algorithm = {
   localInsert,
   integrate: integrateYjs,

@@ -6,12 +6,12 @@ interface ID {
   counter: number;
 }
 
-const idEq = (a: ID | null | undefined, b: ID | null): boolean => (
-  a == b || (
-    a != null && b != null
-    && a.sender === b.sender && a.counter === b.counter
-  )
-)
+// const idEq = (a: ID | null | undefined, b: ID | null): boolean => (
+//   a == b || (
+//     a != null && b != null
+//     && a.sender === b.sender && a.counter === b.counter
+//   )
+// )
 
 interface Element<T> {
   /** For the start & end, this is ("", 0) & ("", 1). */

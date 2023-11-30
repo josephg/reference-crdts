@@ -11,6 +11,7 @@ import * as sync9 from './sync9.js'
 
 // For fugue.
 import { ListFugueSimple } from './list-fugue-simple.js'
+import { FugueMaxSimple } from './fugue-max-simple.js'
 
 type DocType<T> = {arr: T[]}
 
@@ -22,6 +23,7 @@ export enum Mode {
   YjsMod,
   Sync9,
   Fugue,
+  FugueMax,
 }
 
 let log = ''
@@ -44,6 +46,7 @@ export class DocPair<T> {
   //   messages: FugueMessage[],
   // }
   fugue?: ListFugueSimple<T>
+  fugueMax?: FugueMaxSimple<T>
 
   constructor(id: number, localMode: Mode, checkMode: Mode | null = localMode) {
     this.id = id
@@ -53,8 +56,9 @@ export class DocPair<T> {
       [Mode.Automerge]: crdts.automerge,
       [Mode.Yjs]: crdts.yjs,
       [Mode.YjsMod]: crdts.yjsMod,
-      [Mode.Fugue]: crdts.fugue,
       [Mode.Sync9]: crdts.sync9,
+      [Mode.Fugue]: crdts.fugue,
+      [Mode.FugueMax]: crdts.fugueMax,
     }[localMode]
     if (this.algorithm == null) throw Error('Unknown algorithm: ' + localMode)
 
@@ -84,6 +88,9 @@ export class DocPair<T> {
         this.fugue = new ListFugueSimple(this.idStr)
         break
       }
+      case Mode.FugueMax: {
+        this.fugueMax = new FugueMaxSimple(this.idStr)
+      }
     }
   }
 
@@ -106,17 +113,11 @@ export class DocPair<T> {
     }
 
     if (this.fugue != null) {
-      // if (content === 31 || content === 35) debugger
       this.fugue.insert(pos, content)
-      // this.fugue.app.commitBatch()
+    }
 
-      // console.log('insert', 'pos', pos, 'content', content, 'agent', this.idStr)
-      // const fugueList = this.fugue.list.slice()
-      // console.log('fugue', fugueList)
-      // for (let i = 0; i < fugueList.length; i++) {
-      //   console.log(`  ${i}: ${fugueList[i]}   pos: ${this.fugue.list.getPosition(i)}`)
-      // }
-      // this.fugue.list.list.printTreeWalk()
+    if (this.fugueMax != null) {
+      this.fugueMax.insert(pos, content)
     }
   }
 
@@ -169,15 +170,9 @@ export class DocPair<T> {
 
     if (this.fugue != null) {
       this.fugue.mergeFrom(other.fugue!)
-      // for (const m of other.fugue!.messages) {
-      //   if (m.src !== this.idStr) {
-      //     this.fugue.app.receive(m.msg)
-      //     this.fugue.messages.push(m)
-      //   }
-      // }
-
-      // const data = other.fugue!.runtime.save()
-      // this.fugue.runtime.load(data)
+    }
+    if (this.fugueMax != null) {
+      this.fugueMax.mergeFrom(other.fugueMax!)
     }
 
     this.check()
@@ -236,6 +231,20 @@ export class DocPair<T> {
         console.log('\n---fugue---')
         this.fugue.debugPrint()
         console.log(log)
+        throw e
+      }
+    }
+
+    if (this.fugueMax != null) {
+      const fugueList = this.fugueMax.toArray()
+      try {
+        assert.deepStrictEqual(myContent, fugueList)
+      } catch (e) {
+        console.log('doc', this.idStr)
+        console.log('local', this.sephdoc.content)
+
+        console.log('fugue', fugueList)
+        this.algorithm.printDoc(this.sephdoc)
         throw e
       }
     }
@@ -342,7 +351,8 @@ function runRandomizer() {
   // randomizer(Mode.Sync9, Mode.Fugue)
   // randomizer(Mode.Sync9)
   // randomizer(Mode.Sync9, Mode.Fugue)
-  randomizer(Mode.Fugue)
+  // randomizer(Mode.YjsMod, Mode.Fugue)
+  randomizer(Mode.YjsMod, Mode.FugueMax)
   // randomizer(Mode.YjsMod, Mode.Fugue)
   // console.log('iters', crdts.iters)
 
