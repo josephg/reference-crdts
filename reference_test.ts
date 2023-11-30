@@ -12,9 +12,9 @@ import * as sync9 from './sync9.js'
 // For fugue.
 import { ListFugueSimple } from './list-fugue-simple.js'
 
-type DocType = {arr: number[]}
+type DocType<T> = {arr: T[]}
 
-const amInit = automerge.from<DocType>({arr: []})
+const amInit = automerge.from<DocType<any>>({arr: []})
 
 export enum Mode {
   Automerge,
@@ -28,14 +28,14 @@ let log = ''
 
 type FugueMessage = { src: string, msg: Uint8Array }
 
-export class DocPair {
+export class DocPair<T> {
   id: number
   idStr: string
 
   algorithm: crdts.Algorithm
-  sephdoc: crdts.Doc<number>
+  sephdoc: crdts.Doc<T>
 
-  am?: automerge.Doc<DocType>
+  am?: automerge.Doc<DocType<T>>
   ydoc?: Y.Doc
   sync9?: any
   // fugue?: {
@@ -43,7 +43,7 @@ export class DocPair {
   //   list: ListFugueSimple<number>,
   //   messages: FugueMessage[],
   // }
-  fugue?: ListFugueSimple<number>
+  fugue?: ListFugueSimple<T>
 
   constructor(id: number, localMode: Mode, checkMode: Mode | null = localMode) {
     this.id = id
@@ -88,7 +88,7 @@ export class DocPair {
   }
 
   // ins(pos: number, content: number[]) {
-  insert(pos: number, content: number) {
+  insert(pos: number, content: T) {
     // assert(content.length === 1)
     this.algorithm.localInsert(this.sephdoc, this.idStr, pos, content)
     // console.log('->ins', pos, content, this.sephdoc)
@@ -137,7 +137,7 @@ export class DocPair {
     // if (this.sync9) throw Error('nyi')
   }
 
-  mergeFrom(other: DocPair) {
+  mergeFrom(other: DocPair<T>) {
     // console.log('merging', other.content, 'into', this.content)
 
     crdts.mergeInto(this.algorithm, this.sephdoc, other.sephdoc)
@@ -184,7 +184,7 @@ export class DocPair {
     // console.log('->', this.content)
   }
 
-  merge(other: DocPair) {
+  merge(other: DocPair<T>) {
     this.mergeFrom(other)
     other.mergeFrom(this)
     this.checkEq(other)
@@ -243,7 +243,7 @@ export class DocPair {
     // console.log('result', this.ydoc?.getArray().toArray())
   }
 
-  checkEq(other: DocPair) {
+  checkEq(other: DocPair<T>) {
     // console.log('x', this.fugue?.list.slice())
     // console.log('y', other.fugue?.list.slice())
     this.check()
@@ -251,7 +251,7 @@ export class DocPair {
     assert.deepEqual(this.content, other.content)
   }
 
-  get content(): number[] {
+  get content(): T[] {
     return this.am != null
       ? this.am!.arr
       : crdts.getArray(this.sephdoc)

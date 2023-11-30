@@ -373,7 +373,7 @@ const integrateFugue = <T>(doc: Doc<T>, newItem: Item<T>, idx_hint: number = -1)
 
   const getRightParentIdx = (item: Item<T>): number => {
     const rightIdx = item.originRight == null ? endIdx : findItem(doc, item.originRight, idx_hint)
-    const right = doc.content[rightIdx] // Might be null if rightIdx is endIdx.
+    const right: Item<T> | undefined = doc.content[rightIdx] // Might be null if rightIdx is endIdx.
     return right == null || !idEq(right.originLeft, item.originLeft) ? endIdx : rightIdx
   }
 

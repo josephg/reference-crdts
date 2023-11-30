@@ -4,11 +4,11 @@ import {DocPair, Mode} from './reference_test.js'
 import * as sync9 from './sync9.js'
 
 const mode: Mode = Mode.Fugue
-const a = new DocPair(0, mode)
-const b = new DocPair(1, mode)
-const c = new DocPair(2, mode)
+const a = new DocPair<number>(0, mode)
+const b = new DocPair<number>(1, mode)
+const c = new DocPair<number>(2, mode)
 
-const merge = (a: DocPair, b: DocPair) => a.merge(b)
+const merge = <T>(a: DocPair<T>, b: DocPair<T>) => a.merge(b)
 
 a.insert(0, 1)
 a.insert(1, 2)
@@ -20,4 +20,5 @@ b.insert(2, 14)
 b.algorithm.printDoc(b.sephdoc)
 merge(c, b)
 
+// b.algorithm.printDoc(b.sephdoc)
 // console.log(sync9.get_content(c.sync9!))
