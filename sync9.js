@@ -27,6 +27,9 @@ export function get_content(loom) {
 export function insert(loom, position, content) {
   loom.set(`[${position}:${position}]=[${JSON.stringify(content)}]`)
 }
+export function insertMany(loom, position, ...content) {
+  loom.set(`[${position}:${position}]=${JSON.stringify(content)}`)
+}
 
 
 function create_loom(L, send) {

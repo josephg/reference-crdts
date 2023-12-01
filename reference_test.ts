@@ -95,31 +95,58 @@ export class DocPair<T> {
   }
 
   // ins(pos: number, content: number[]) {
-  insert(pos: number, content: T) {
-    // assert(content.length === 1)
-    this.algorithm.localInsert(this.sephdoc, this.idStr, pos, content)
-    // console.log('->ins', pos, content, this.sephdoc)
 
-    this.ydoc?.getArray().insert(pos, [content])
+  insert(pos: number, ...content: T[]) {
+    for (let i = 0; i < content.length; i++) {
+      this.algorithm.localInsert(this.sephdoc, this.idStr, pos + i, content[i])
+    }
+
+    this.ydoc?.getArray().insert(pos, content)
 
     if (this.am != null) {
       this.am = automerge.change(this.am, d => {
-        d.arr.splice(pos, 0, content)
+        d.arr.splice(pos, 0, ...content)
       })
     }
 
     if (this.sync9 != null) {
-      sync9.insert(this.sync9, pos, content)
+      sync9.insertMany(this.sync9, pos, ...content)
     }
 
     if (this.fugue != null) {
-      this.fugue.insert(pos, content)
+      this.fugue.insert(pos, ...content)
     }
 
     if (this.fugueMax != null) {
-      this.fugueMax.insert(pos, content)
+      this.fugueMax.insert(pos, ...content)
     }
   }
+
+  // insert(pos: number, content: T) {
+  //   // assert(content.length === 1)
+  //   this.algorithm.localInsert(this.sephdoc, this.idStr, pos, content)
+  //   // console.log('->ins', pos, content, this.sephdoc)
+
+  //   this.ydoc?.getArray().insert(pos, [content])
+
+  //   if (this.am != null) {
+  //     this.am = automerge.change(this.am, d => {
+  //       d.arr.splice(pos, 0, content)
+  //     })
+  //   }
+
+  //   if (this.sync9 != null) {
+  //     sync9.insert(this.sync9, pos, content)
+  //   }
+
+  //   if (this.fugue != null) {
+  //     this.fugue.insert(pos, content)
+  //   }
+
+  //   if (this.fugueMax != null) {
+  //     this.fugueMax.insert(pos, content)
+  //   }
+  // }
 
   del(pos: number) {
     // I haven't added delete support to the merge() function in crdts.
@@ -317,11 +344,18 @@ const randomizer = (localMode: Mode, checkMode: (Mode | null) = localMode) => {
         if (true) {
           // Insert!
           // const content = new Array(randInt(3) + 1).fill(null).map(() => ++nextItem)
-          const content = ++nextItem
+
+          const content = []
+          do {
+            content.push(++nextItem)
+          } while (randBool(0.5))
+
+          // const content = ++nextItem
           const pos = randInt(len + 1)
           // console.log('insert', pos, content)
-          doc.insert(pos, content)
-          log += `${doc.idStr}.insert(${pos}, ${content})\n`
+          doc.insert(pos, ...content)
+
+          log += `${doc.idStr}.insert(${pos}, ...${JSON.stringify(content)})\n`
         } else {
           // Delete something
           const pos = randInt(len)
@@ -348,11 +382,12 @@ const randomizer = (localMode: Mode, checkMode: (Mode | null) = localMode) => {
 function runRandomizer() {
   // randomizer(Mode.YjsMod, Mode.Sync9)
   // randomizer(Mode.Automerge)
-  // randomizer(Mode.Sync9, Mode.Fugue)
-  // randomizer(Mode.Sync9)
+  // randomizer(Mode.Fugue, Mode.Sync9)
+  randomizer(Mode.Sync9)
   // randomizer(Mode.Sync9, Mode.Fugue)
   // randomizer(Mode.YjsMod, Mode.Fugue)
-  randomizer(Mode.YjsMod, Mode.FugueMax)
+  // randomizer(Mode.YjsMod, Mode.FugueMax)
+  // randomizer(Mode.YjsMod, null)
   // randomizer(Mode.YjsMod, Mode.Fugue)
   // console.log('iters', crdts.iters)
 
